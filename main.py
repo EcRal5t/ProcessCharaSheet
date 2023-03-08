@@ -6,6 +6,7 @@ import logging
 
 from typing import Optional, Any, List, Tuple, Dict, Callable, Union
 import argparse
+from functools import reduce
 
 from jpp_trasnlator import *
 
@@ -13,6 +14,7 @@ def print_ipa_process(syllable:str):
     syllables = []
     try:
         syllables = splite_jpp(syllable)
+        logging.info(f"分割 {syllable} 成 {syllables}")
         ipa = get_ipa(locale_rule, syllables, locale_name)
     except TypeError as e:
         logging.error("含有不合法拼音或未兼容音素 ", syllables, e)
@@ -29,7 +31,8 @@ class Chara:
         ipas: List[str]
         split_prons: List[List[str]]
         def __init__(self, prons: List[str], mean: str, ipas: List[str]):
-            self.prons = prons
+            self.split_prons = sorted([splite_jpp(p) for p in prons], key=lambda x:x[1]+x[2])
+            self.prons = list(map(lambda x: ''.join(x), self.split_prons))
             self.mean  = mean
             self.ipas  = ipas
         def __eq__(self, __o: object) -> bool:
@@ -37,9 +40,8 @@ class Chara:
             if any([p in __o.prons for p in self.prons]) and (self.mean!="" and self.mean==__o.mean): return True
             if all([p in __o.prons for p in self.prons]) or all([p in self.prons for p in __o.prons]): return True
             return False
-        def toIpa(self, locale_rule: List[Union[int, str]], locale_name: str, with_ipa: bool = False):
-            self.split_prons = [splite_jpp(p) for p in self.prons]
-            if not with_ipa: self.ipas = [format_ipa(get_ipa(locale_rule, i, locale_name)) for i in self.split_prons]
+        def toIpa(self, locale_rule: List[Union[int, str]], locale_name: str):
+            self.ipas = [format_ipa(get_ipa(locale_rule, i, locale_name)) for i in self.split_prons]
         def __str__(self) -> str:
             return (f"{self.prons}<{self.mean}>" if self.mean!="" else f"{self.prons}") + (f"/{'.'.join(self.ipas)}/" if self.ipas else "")
     multiprons: List[Pron]
@@ -54,7 +56,7 @@ class Chara:
     def rm_duplicate(self) -> None:
         assert len(self.multiprons)>=1
         if len(self.multiprons)==1: return
-        multiprons = [Chara.Pron(m.prons.copy(), m.mean, m.ipas.copy()) for m in self.multiprons]
+        multiprons = [Chara.Pron(m.prons.copy(), m.mean, m.ipas.copy()) for m in self.multiprons] # costly, should be optimized
         for i in range(len(multiprons[:-1])):
             if len(multiprons[i].prons)==0: continue
             for j in range(len(multiprons[i+1:])):
@@ -62,6 +64,7 @@ class Chara:
                 if multiprons[i]==multiprons[i+1+j]:
                     new_mean = ""
                     if multiprons[i].mean!="" and multiprons[i+1+j].mean!="":
+                        if len(multiprons[i].prons)>1 or len(multiprons[i+1+j].prons)>1: continue #----#
                         if len(multiprons) > 2:
                             if multiprons[i].mean != multiprons[i+1+j].mean:
                                 new_mean = multiprons[i].mean + "；" + multiprons[i+1+j].mean
@@ -76,12 +79,12 @@ class Chara:
                     logging.info(f"{self.index} 合併: {self.chara}: [{i}]{self.multiprons[i]}, [{i+1+j}]{self.multiprons[i+1+j]} => {multiprons[i]}")
 
         self.multiprons = [m for m in multiprons if len(m.prons)>0]
-    def toIpa(self, locale_rule: List[Union[int, str]], locale_name: str, with_ipa: bool = False) -> None:
+    def toIpa(self, locale_rule: List[Union[int, str]], locale_name: str) -> None:
         for i in self.multiprons:
             try:
-                i.toIpa(locale_rule, locale_name, with_ipa)
+                i.toIpa(locale_rule, locale_name)
             except Exception as e:
-                logging.error(f"{self.index} 未識別的音節 {self.chara}, {'/'.join([str(i) for i in self.multiprons])}")
+                logging.error(f"{self.index} 未識別的音節 {self.chara}, {'/'.join([str(i) for i in self.multiprons])},【{e.args[0]}】")
                 logging.debug(e)
                 continue
 '''
@@ -92,8 +95,18 @@ multiprons: [
 ]
 '''
 
+def read_row_syllable(elements: List[str]) -> Tuple[bool, List[str]]:
+    if all([i=="" for i in elements]): return (True, [])
+    elements_split = [i.split('/') for i in elements]
+    seperator_count = [len(e)-1 for e in elements_split]
+    seperator_count_filtered = list(filter(lambda x: x>0, seperator_count))
+    if len(seperator_count_filtered)==0: return (True, ["".join(elements)])
+    retrieve_loop_times = min(seperator_count_filtered)
+    is_valid = retrieve_loop_times == max(seperator_count_filtered)
+    elements_split_pad = [e+[e[-1]]*(retrieve_loop_times-len(e)+1) for e in elements_split]
+    return (is_valid, ["".join([e[i] for e in elements_split_pad]) for i in range(retrieve_loop_times+1)])
 
-def read_sheet(df: pd.DataFrame, use_col_index: Dict[str, Any]) -> Tuple[List[Chara], Dict[str, int]]:
+def read_sheet(df: pd.DataFrame, use_col_index: Dict[str, List[int]]) -> Tuple[List[Chara], Dict[str, int]]:
     entry_list: List[Chara] = list()
     chara_index_dict: Dict[str, int] = dict()
     logging.info("總共 %d 行", len(df))
@@ -103,18 +116,20 @@ def read_sheet(df: pd.DataFrame, use_col_index: Dict[str, Any]) -> Tuple[List[Ch
     for sheet_index in range(len(df)):
         sheet_row = df.loc[sheet_index]
         # logging.debug("第 %d 行: %s", sheet_index, sheet_row)
-        if not sheet_row[use_col_index['char']] or isinstance(sheet_row[use_col_index['char']], float): continue
-        chara = sheet_row[use_col_index['char']].strip()
+        if not sheet_row[use_col_index['char'][0]] or isinstance(sheet_row[use_col_index['char'][0]], float): continue
+        chara = sheet_row[use_col_index['char'][0]].strip()
         meaning = "".join([sheet_row[i] for i in use_col_index['mean']]) if len(use_col_index['mean'])>0 else ""
-        pron_main = "".join([str(sheet_row[i]) for i in pron_col]).replace(".0", "")
-        pron_sub  = "".join([str(sheet_row[i]) for i in pron_nd_col]).replace(".0", "")
-        # supposed to be the last column and there is no pron_sub column
         ipas = ["".join([sheet_row[i] for i in use_col_index['ipa']])] if len(use_col_index['ipa'])>0 else []
+        is_valid_main, pron_main = read_row_syllable([sheet_row[i].strip() for i in pron_col])#"".join([str(sheet_row[i]) for i in pron_col])
+        is_valid_sub, pron_sub   = read_row_syllable([sheet_row[i].strip() for i in pron_nd_col])#"".join([str(sheet_row[i]) for i in pron_nd_col])
+        if not is_valid_main or not is_valid_sub:
+            logging.warning(f"{sheet_index+2} 分隔符數目不匹配: {chara} {pron_main} {pron_sub}")
+        # supposed to be the last column and there is no pron_sub column
         logging.debug("第 %d 行: %s", sheet_index, (chara, pron_main, pron_sub, meaning, ipas))
-        if pron_main == "":
-            if pron_sub != "": logging.warning(f"{sheet_index+2} 音節空缺: {chara} {pron_sub} {meaning}")
+        if len(pron_main) == 0:
+            if len(pron_sub) != 0: logging.warning(f"{sheet_index+2} 音節空缺: {chara} {pron_sub} {meaning}")
             continue
-        syllables: List[str] = [pron_main, pron_sub] if pron_sub!="" else [pron_main]
+        syllables: List[str] = pron_main + pron_sub
         if len(meaning)>0 and meaning[-1] in ["。", "；"]: meaning = meaning[:-1]
         if chara not in chara_index_dict:
             chara_index_dict[chara] = len(entry_list)
@@ -125,7 +140,7 @@ def read_sheet(df: pd.DataFrame, use_col_index: Dict[str, Any]) -> Tuple[List[Ch
     return entry_list, chara_index_dict
 
 
-def sim_2_trad(entry_list: Tuple[List[Chara]], chara_index_dict: Dict[str, int], keep_s2t: bool) -> Tuple[List[Chara], Dict[str, int]]:
+def sim_2_trad(entry_list: List[Chara], chara_index_dict: Dict[str, int], keep_s2t: bool) -> Tuple[List[Chara], Dict[str, int]]:
     s2t_converter = opencc.OpenCC('s2t.json')
     s2t_keeped_char = {
         "干","后","系","历","板","表","丑","范","丰","刮","胡","回",
@@ -242,15 +257,15 @@ if __name__ == '__main__':
     args_parser = argparse.ArgumentParser(description="從字表轉換到數據庫格式。    By EcisralHetha")
     args_parser.add_argument('-l', '--locale-name', type=str, help='地名，需要包括小地名在內的全名')
     args_parser.add_argument('-i', '--file-path', type=str, required=True,  help='輸入字表路徑')
-    args_parser.add_argument('-o', '--output-dir', type=str, default="G:/PROJ/220927/輸出", help='輸出目錄')
+    args_parser.add_argument('-o', '--output-dir', type=str, default="./output", help='輸出目錄')
     args_parser.add_argument('-n', '--sheet-name', type=str, help='表格所在的表名', default='主表')
     #args_parser.add_argument('-v', '--version', action='version', version='v0.5/211017')
     args_parser.add_argument('--no-output', action='store_true', help='不輸出 SQL 文件')
-    args_parser.add_argument('--char', type=str, help='字頭所在列', required=True)
-    args_parser.add_argument('--pron', type=str, help='拼音所在列', required=True)
-    args_parser.add_argument('--pron_nd', type=str, help='次音所在列')
-    args_parser.add_argument('--mean', type=str, help='釋義所在列')
-    args_parser.add_argument('--ipa', type=str, help='IPA 所在列')
+    args_parser.add_argument('-c', '--char', type=str, help='字頭所在列', required=True)
+    args_parser.add_argument('-p', '--pron', type=str, help='拼音所在列', required=True)
+    args_parser.add_argument('-P', '--pron_nd', type=str, help='次音所在列')
+    args_parser.add_argument('-m', '--mean', type=str, help='釋義所在列')
+    args_parser.add_argument('-I', '--ipa', type=str, help='IPA 所在列')
     args_parser.add_argument('--keep-s2t', action='store_true', help='保留簡體字')
     args_parser.add_argument('--debug', action='store_true', help='顯示詳細資訊')
     args_parser.add_argument('-j', '--jpp2ipa', type=str, help='將攜帶的粵拼參數轉為 IPA')
@@ -260,51 +275,62 @@ if __name__ == '__main__':
     
     output_dir  = args_config.output_dir
     input_path  = args_config.file_path
-    #output_name = "ZNgzjauSjingdung"
+    if not os.path.exists(output_dir): os.mkdir(output_dir)
+    if not os.path.exists(input_path):
+        logging.error("輸入文件不存在")
+        exit(1)
     
-    locale_name = args_config.locale_name if args_config.locale_name else os.path.basename(input_path).split(" ")[0] 
-    sheet_name  = args_config.sheet_name#"Sheet1"
+    locale_name :str = args_config.locale_name if args_config.locale_name else os.path.basename(input_path).split(" ")[0] 
+    sheet_name  :str = args_config.sheet_name#"Sheet1"
     
-    char_col    = args_config.char
-    pron_col    = args_config.pron
-    pron_nd_col = args_config.pron_nd if args_config.pron_nd else ""
-    mean_col    = args_config.mean
-    ipa_col     = args_config.ipa
+    char_col    :str = args_config.char
+    pron_col    :str = args_config.pron
+    pron_nd_col :str = args_config.pron_nd if args_config.pron_nd else ""
+    mean_col    :str = args_config.mean
+    ipa_col     :str = args_config.ipa
     
-    char_col_index    = ord(char_col) - 65
+    char_col_index    = [ord(char_col) - 65]
     pron_col_index    = [ord(i) - 65 for i in pron_col]
     pron_nd_col_index = [ord(i) - 65 for i in pron_nd_col]
     mean_col_index    = [ord(i) - 65 for i in mean_col] if args_config.mean else []
     ipa_col_index     = [ord(i) - 65 for i in ipa_col]  if args_config.ipa  else []
-    use_col_index: Dict[str, Union[str, List]] = {
+    use_col_index: Dict[str, List[int]] = {
         "char":char_col_index, "mean":mean_col_index, "ipa":ipa_col_index, "pron":pron_col_index, "pron_nd":pron_nd_col_index}
     logging.debug("use_col_index: %s" % use_col_index)
     
     locale_rule = [0, 1, locale_name]
     
-    if not args_config.jpp2ipa:
-        logging.info("0____讀取文件____")
-        data_file = pd.read_excel(input_path, sheet_name=sheet_name, keep_default_na=False, dtype=str)
-        
-        logging.info("1____讀取字表____")
-        entry_list, chara_index_dict = read_sheet(data_file, use_col_index)
-        
-        logging.info("2___合併重複音節____")
-        for entry in entry_list: entry.rm_duplicate()
-        
-        logging.info("3___簡轉繁____")
-        entry_list, chara_index_dict = sim_2_trad(entry_list, chara_index_dict, args_config.keep_s2t)
-        
-        logging.info("4____取得IPA____")
-        for entry in entry_list: entry.toIpa(locale_rule, locale_name, ipa_col_index!=-1)
+    try:
+        if not args_config.jpp2ipa:
+            logging.info("0____讀取文件____")
+            data_file = pd.read_excel(input_path, sheet_name=sheet_name, keep_default_na=False, dtype=str)
             
-        logging.info("5____輸出當地名粵拼____")
-        output_name = retrieve_locale_name(entry_list, chara_index_dict, locale_name)
-        
-        if not args_config.no_output:
-            logging.info("6____輸出文件____")
-            count_row, count_chara = output_sql_full(entry_list, output_name, output_dir)
-            logging.info(f"共 {len(data_file)} 行, 有效 {count_row} 行, {count_chara} 字")
-        logging.info("7____完成____")
-    else:
-        print_ipa_process(args_config.jpp2ipa)
+            logging.info("1____讀取字表____")
+            entry_list, chara_index_dict = read_sheet(data_file, use_col_index)
+            
+            logging.info("2___合併重複音節____")
+            for entry in entry_list: entry.rm_duplicate()
+            
+            logging.info("3___簡轉繁____")
+            entry_list, chara_index_dict = sim_2_trad(entry_list, chara_index_dict, args_config.keep_s2t)
+            
+            if len(ipa_col_index)>0:
+                logging.info("4____自带IPA，不需轉換____")
+            else:
+                logging.info("4____取得IPA____")
+                for entry in entry_list: entry.toIpa(locale_rule, locale_name)
+                
+            logging.info("5____輸出當地名粵拼____")
+            output_name = retrieve_locale_name(entry_list, chara_index_dict, locale_name)
+            
+            if not args_config.no_output:
+                logging.info("6____輸出文件____")
+                count_row, count_chara = output_sql_full(entry_list, output_name, output_dir)
+                logging.info(f"共 {len(data_file)} 行, 有效 {count_row} 行, {count_chara} 字")
+            logging.info("7____完成____")
+        else:
+            print_ipa_process(args_config.jpp2ipa)
+    except KeyboardInterrupt as e:
+        print()
+        logging.error("用戶中斷")
+    

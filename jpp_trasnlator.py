@@ -2,11 +2,15 @@ import os
 import re
 import csv
 from omegaconf import DictConfig, OmegaConf
-from typing import Optional, Any, Set, List, Tuple, Dict
+from typing import Optional, Set, List, Tuple, Union
 
+
+RULES: List[List[Union[str, List[str]]]] = []
 with open('rules.csv', 'r', encoding='utf-8') as f:
     reader = csv.reader(f)
-    rules = list(reader)
+    for line in reader:
+        line_:List[Union[str, List[str]]] = list(map(lambda x:x.split("|")if"|"in x else x, line))
+        RULES.append(line_)
 tone_rules = OmegaConf.load("./tone_rule.yaml")
 
 pron_format    = '^[a-z]{1,10}\\d{0,2}$'
@@ -30,7 +34,7 @@ jpp2ipa_ini = {
 "gw":"kʷ", "kw":"kʷʰ", "hw":"hʷ",
 "gv":"kᵛ", "kv":"kᵛʰ", "hv":"hᵛ"}
 jpp2ipa_vow_obs = { "i":"i", "yu":"y", "y":"y", "ii":"ɿ", "uu":"ʉ", "ur":"ɯ", "u":"u", "iw":"ɪ", "yw":"ʏ", "uw":"ʊ", "ee":"e", "ew":"ø", "ir":"ɘ", "eo":"ɵ", "or":"ɤ", "oo":"o", "ea":"ə", "e":"ɛ", "oe":"œ", "aw":"ɜ", "ow":"ɞ", "er":"ʌ", "o":"ɔ", "ae":"æ", "a":"ɐ", "aa":"a", "ao":"ɶ", "ar":"ɑ", "oa":"ɒ", "m":"m̩", "n":"n̩", "ng":"ŋ̍", "z":"z" }
-jpp2ipa_vow = { "i":"i", "yu":"y", "y":"y", "ur":"ɯ", "u":"u", "iw":"ɪ", "uw":"ʊ", "ee":"e", "eo":"ɵ", "oo":"o", "ea":"ə", "e":"ɛ", "oe":"œ", "o":"ɔ", "ae":"æ", "a":"ɐ", "aa":"a", "oa":"ɒ", "z":"z", "ii":"ɿ", "ew":"ø", "m":"m̩", "n":"n̩", "ng":"ŋ̍" }
+jpp2ipa_vow = { "i":"i", "yu":"y", "y":"y", "ur":"ɯ", "u":"u", "ee":"e", "eo":"ɵ", "oo":"o", "ea":"ə", "e":"ɛ", "oe":"œ", "o":"ɔ", "ae":"æ", "a":"ɐ", "aa":"a", "oa":"ɒ", "z":"z", "ii":"ɿ", "ew":"ø", "m":"m̩", "n":"n̩", "ng":"ŋ̍" }
 jpp2ipa_cod_mark = { "m":"m̚", "n":"n̚", "ng":"ŋ̚", "p":"p̚", "t":"t̚", "k":"k̚", "h":"ʔ", "nn":"̃", "":""}
 jpp2ipa_cod =  { "m":"m", "n":"n", "ng":"ŋ", "gn":"ɲ", "p":"p", "t":"t", "k":"k", "h":"ʔ", "nn":"̃", "":""}
 # ii默认应该是/ɿ/  # 二選ɨ
@@ -46,9 +50,18 @@ def splite_jpp(syllable: str) -> List[str]:
     cod = cod[0] if cod!=None else ''
     ton = ton[0] if ton!=None else ''
     vows = syllable[len(ini):-(len(cod)+len(ton))] if cod!='' or ton!='' else syllable[len(ini):]
-    syllable_splited = [ini, vows, cod, ton]
+    syllable_splited = norm_jpp([ini, vows, cod, ton])
     return syllable_splited
 
+# 正則化j++音節
+def norm_jpp(splited: List[str]) -> List[str]:
+    normed = splited.copy()
+    if splited[0]!="" and len(splited[1])>=2:
+        if splited[0][-1]=="j"  and (splited[1][0:2]in["ia","ie","io"]):
+            normed[1] = splited[1][1:] # jia -> ja, njia -> nja, sjia -> sja
+        if splited[0][-1]=="w"  and (splited[1][0:2]in["ua","ue","uo"]):
+            normed[1] = splited[1][1:] # wua -> wa, kwua -> kwa
+    return normed
 
 # 按照rules.csv和默认规则将切分开的j++转为IPA
 # eg. get_ipa([1, 2], ['j', 'a', 't', '1'], "廣州") -> ['j', ['ɐ'], 't', '5']
@@ -58,14 +71,14 @@ def get_ipa(locale_rules: List, splited: List[str], locale_name: str, info=None)
     is_vow_transed = False
     is_con_transed = False
     transed = ['', [], '', '']
-    for i, entry in enumerate(rules):
+    for i, entry in enumerate(RULES):
         if entry[0] not in locale_rules:
             continue
-        if entry[1] != '*' and entry[1] != splited[0]:
+        if entry[1] != '*' and (entry[1]!=splited[0] if isinstance(entry[1], str) else splited[0] not in entry[1]):
             continue
-        if entry[2] != '*' and entry[2] != splited[1]:
+        if entry[2] != '*' and (entry[2]!=splited[1] if isinstance(entry[2], str) else splited[1] not in entry[2]):
             continue
-        if entry[3] != '*' and entry[3] != splited[2]:
+        if entry[3] != '*' and (entry[3]!=splited[2] if isinstance(entry[3], str) else splited[2] not in entry[3]):
             continue
         if entry[4] != '*' and not is_ini_transed:
             transed[0] = entry[4]
@@ -100,8 +113,7 @@ def get_ipa(locale_rules: List, splited: List[str], locale_name: str, info=None)
         elif splited[3].isdigit() and int(tone_mark) in tones_set:
             transed[3] = str(tones_set[int(tone_mark)])
         else:
-            print(f"       調號不存在: [{tone_mark}], from [{''.join(splited)}], in {checkedToneMark} @{locale_name}")
-            assert False
+            raise TypeError(f"調號不存在: {checkedToneMark}[{tone_mark}]")
     else:
         transed[3] = ""
     return tuple(transed)
@@ -112,7 +124,9 @@ def get_ipa(locale_rules: List, splited: List[str], locale_name: str, info=None)
 def get_vows_ipa(vows: str) -> List[str]:
     ipa_vow_list = []
     while len(vows) != 0: #从前到后用正则检测元音 #現在是從後往前了 
-        vow = re.search(vowel_format, vows)[0]
+        vow_ = re.search(vowel_format, vows)
+        assert vow_ != None, f"元音不存在: {vows}"
+        vow = vow_[0]
         ipa_vow_list.append(jpp2ipa_vow[vow])
         vows = vows[:-len(vow)]
     return ipa_vow_list[::-1]
