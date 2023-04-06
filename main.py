@@ -97,6 +97,8 @@ multiprons: [
 
 def read_row_syllable(elements: List[str]) -> Tuple[bool, List[str]]:
     if all([i=="" for i in elements]): return (True, [])
+    elements = [i if isinstance(i, str) else str(i) for i in elements]
+    elements[0] = elements[0] if elements[0]!="0.0" else ""
     elements_split = [i.split('/') for i in elements]
     seperator_count = [len(e)-1 for e in elements_split]
     seperator_count_filtered = list(filter(lambda x: x>0, seperator_count))
@@ -115,6 +117,7 @@ def read_sheet(df: pd.DataFrame, use_col_index: Dict[str, List[int]]) -> Tuple[L
     
     for sheet_index in range(len(df)):
         sheet_row = df.loc[sheet_index]
+        # assert df.loc[sheet_index][use_col_index['pron'][0]] != "0.0", sheet_index
         # logging.debug("第 %d 行: %s", sheet_index, sheet_row)
         if not sheet_row[use_col_index['char'][0]] or isinstance(sheet_row[use_col_index['char'][0]], float): continue
         chara = sheet_row[use_col_index['char'][0]].strip()
@@ -232,7 +235,8 @@ def output_sql_full(entry_list:List[Chara], output_name: str, output_dir: str) -
         f.write(output_sql_header(output_name))
         for entry in entry_list:
             if entry.status == -1: continue
-            for prons in entry.multiprons:
+            # for prons in entry.multiprons:
+            for prons in sorted(entry.multiprons, key=lambda x:x.prons[0]):
                 ipas = "=".join(prons.ipas)
                 ipa = "'" + ipas + "'" if "'" not in ipas else '"' + ipas + '"'
                 mean = "'" + prons.mean + "'" if "'" not in prons.mean else '"' + prons.mean + '"'
@@ -275,7 +279,7 @@ if __name__ == '__main__':
     
     output_dir  = args_config.output_dir
     input_path  = args_config.file_path
-    if not os.path.exists(output_dir): os.mkdir(output_dir)
+    if not args_config.no_output and not os.path.exists(output_dir): os.mkdir(output_dir)
     if not os.path.exists(input_path):
         logging.error("輸入文件不存在")
         exit(1)
@@ -315,7 +319,7 @@ if __name__ == '__main__':
             entry_list, chara_index_dict = sim_2_trad(entry_list, chara_index_dict, args_config.keep_s2t)
             
             if len(ipa_col_index)>0:
-                logging.info("4____自带IPA，不需轉換____")
+                logging.info("4____自带IPA, 不需轉換____")
             else:
                 logging.info("4____取得IPA____")
                 for entry in entry_list: entry.toIpa(locale_rule, locale_name)

@@ -15,7 +15,7 @@ tone_rules = OmegaConf.load("./tone_rule.yaml")
 
 pron_format    = '^[a-z]{1,10}\\d{0,2}$'
 #initial_format = '^(n[jg]?|bb?|dd?|[zcs][hrjl]?|[ptkg]h?|[hmqfvwjl])([wv]?)(?=[aeoiuymn])'
-initial_format = '^(mb?|n[jrd]?|ngg?|[bdg]{1,2}|g[hn]?|r[bdgzscrh]|[zcs][hrjl]?|[ptkvw]h?|[hqfjlr])([jwv]?)(?=[aeoiuymn])'
+initial_format = '^(mb?|n[jrd]?|ngg?|[bdg]{1,2}|g[hn]?|r[bdgzscrh]|[zcs][hrjl]?|[ptkvw]h?|[hqfjlrx0])([jwv]?)(?=[aeoiuymn])'
 coda_format    = "(?<=[aoreiwuy])(n[ng]?|[mptkh])(?=[0-9][0-9']?$)?"
 tone_format    = "[0-9]?[0-9*][0-9']?$"
 #vowel_format   = '^(ng$|m$|ii|uu|[iu][rw]?|[aeo][aorew]?|yw|yu$|y)'
@@ -34,7 +34,8 @@ jpp2ipa_ini = {
 "gw":"kʷ", "kw":"kʷʰ", "hw":"hʷ",
 "gv":"kᵛ", "kv":"kᵛʰ", "hv":"hᵛ"}
 jpp2ipa_vow_obs = { "i":"i", "yu":"y", "y":"y", "ii":"ɿ", "uu":"ʉ", "ur":"ɯ", "u":"u", "iw":"ɪ", "yw":"ʏ", "uw":"ʊ", "ee":"e", "ew":"ø", "ir":"ɘ", "eo":"ɵ", "or":"ɤ", "oo":"o", "ea":"ə", "e":"ɛ", "oe":"œ", "aw":"ɜ", "ow":"ɞ", "er":"ʌ", "o":"ɔ", "ae":"æ", "a":"ɐ", "aa":"a", "ao":"ɶ", "ar":"ɑ", "oa":"ɒ", "m":"m̩", "n":"n̩", "ng":"ŋ̍", "z":"z" }
-jpp2ipa_vow = { "i":"i", "yu":"y", "y":"y", "ur":"ɯ", "u":"u", "ee":"e", "eo":"ɵ", "oo":"o", "ea":"ə", "e":"ɛ", "oe":"œ", "o":"ɔ", "ae":"æ", "a":"ɐ", "aa":"a", "oa":"ɒ", "z":"z", "ii":"ɿ", "ew":"ø", "m":"m̩", "n":"n̩", "ng":"ŋ̍" }
+jpp2ipa_vow = {
+    "i":"i", "yu":"y", "y":"y", "ur":"ɯ", "u":"u", "ee":"e", "eo":"ɵ", "oo":"o", "ea":"ə", "e":"ɛ", "oe":"œ", "o":"ɔ", "ae":"æ", "a":"ɐ", "aa":"a", "oa":"ɒ", "z":"z", "ii":"ɿ", "ew":"ø", "m":"m̩", "n":"n̩", "ng":"ŋ̍",}
 jpp2ipa_cod_mark = { "m":"m̚", "n":"n̚", "ng":"ŋ̚", "p":"p̚", "t":"t̚", "k":"k̚", "h":"ʔ", "nn":"̃", "":""}
 jpp2ipa_cod =  { "m":"m", "n":"n", "ng":"ŋ", "gn":"ɲ", "p":"p", "t":"t", "k":"k", "h":"ʔ", "nn":"̃", "":""}
 # ii默认应该是/ɿ/  # 二選ɨ
@@ -56,7 +57,10 @@ def splite_jpp(syllable: str) -> List[str]:
 # 正則化j++音節
 def norm_jpp(splited: List[str]) -> List[str]:
     normed = splited.copy()
+    if splited[0]=="0": normed[0] = "" # 0 -> 空
     if splited[0]!="" and len(splited[1])>=2:
+        if (splited[1]in["ie"]and splited[2]!="")or splited[1]in["ieu"]:
+            normed[1] = splited[1][1:] # iek -> ek, iet -> et, iep -> ep, ieu -> eu
         if splited[0][-1]=="j"  and (splited[1][0:2]in["ia","ie","io"]):
             normed[1] = splited[1][1:] # jia -> ja, njia -> nja, sjia -> sja
         if splited[0][-1]=="w"  and (splited[1][0:2]in["ua","ue","uo"]):
