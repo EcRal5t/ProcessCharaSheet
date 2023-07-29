@@ -110,7 +110,7 @@ def get_ipa(locale_rules: List, splited: List[str], locale_name: str, info=None)
     #print(splited[3])
     if splited[3] != "":
         checkedToneMark = "舒聲" if splited[2] not in ["p", "t", "k", "h"] else "入聲"
-        tones_set = tone_rules[locale_name][checkedToneMark]
+        tones_set = tone_rules[locale_name][checkedToneMark] # type: ignore
         tone_mark = splited[3]
         if tone_mark in tones_set:
             transed[3] = str(tones_set[tone_mark])
