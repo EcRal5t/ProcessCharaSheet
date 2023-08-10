@@ -9,7 +9,7 @@ from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
 from openpyxl.styles.colors import Color
 # input_path = sys.argv[1] #'D:\\C_KheuyMyenDong\\Desktop\\Jyutdict\\泛粵字表\\本体\\泛粵字表 220609.xlsx'
-input_path = "Z:\\Proj\\Jyutdict\\泛粵字表\\本体\\泛粵字表 230328.xlsx"
+input_path = "Z:\\Proj\\Jyutdict\\泛粵字表\\本体\\泛粵字表 230806_.xlsx"
 time_str = datetime.datetime.now().strftime('_%Y%m%d')
 
 regex_pure_alphabet = re.compile("^[a-z'0-9?/①-⑨_^*]+$")
@@ -44,9 +44,9 @@ HEADER_INFO_COLOR = ['', '']
 HEADER_INFO_NOTE = ['', '']
 
 
-regex_block_email = re.compile("@[a-zA-Z0-9]+?@[a-zA-Z0-9]+?\\.[a-zA-Z]+\\b")
+regex_block_email = re.compile("@[a-zA-Z0-9\\.]+?@[a-zA-Z0-9]+?\\.[a-zA-Z]+\\b")
 regex_block_name = re.compile("\n\t-.+?(\n|$)")
-regex_block_info = lambda x: regex_block_name.sub("\t-[Anonymous]\n", regex_block_email.sub("@[Anonymous]", x.strip()) if"@"in x else x.strip())
+regex_block_info = lambda x: regex_block_name.sub("\t-[Anony]\n", regex_block_email.sub("@[Anony]", x.strip()) if"@"in x else x.strip())
 def format_locale_record(row: int) -> Tuple[List[str], List[int], bool]:
     sheet_row = main_sheet[row]
     assert isinstance(sheet_row, tuple)

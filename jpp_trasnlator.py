@@ -6,12 +6,12 @@ from typing import Optional, Set, List, Tuple, Union
 
 
 RULES: List[List[Union[str, List[str]]]] = []
-with open('rules.csv', 'r', encoding='utf-8') as f:
+with open('rules/rule_j2i.csv', 'r', encoding='utf-8') as f:
     reader = csv.reader(f)
     for line in reader:
         line_:List[Union[str, List[str]]] = list(map(lambda x:x.split("|")if"|"in x else x, line))
         RULES.append(line_)
-tone_rules = OmegaConf.load("./tone_rule.yaml")
+tone_rules = OmegaConf.load("rules/rule_tone.yaml")
 
 pron_format    = '^[a-z]{1,10}\\d{0,2}$'
 #initial_format = '^(n[jg]?|bb?|dd?|[zcs][hrjl]?|[ptkg]h?|[hmqfvwjl])([wv]?)(?=[aeoiuymn])'
