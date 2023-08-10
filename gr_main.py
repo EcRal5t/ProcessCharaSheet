@@ -1,13 +1,13 @@
-import gradio as gr
-import pandas as pd
-import openpyxl
-
 from typing import Optional, Any, List, Tuple, Dict, Callable, Union
 import argparse
 from functools import reduce
 import time
 import logging
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s | %(funcName)s: %(levelname)s] %(message)s')
+
+import gradio as gr
+import openpyxl
+import pandas as pd
 
 from gr_struct import *
 
@@ -118,10 +118,11 @@ def get_col_index(colname: str) -> int:
         return ord(colname)-97
         
         
-def translit_chs_to_jpp(chs: str) -> Tuple[str]:
-    presence = SHEETS[SHEET_IDX].show_str_to_jpp(chs)
-    msg = ""
-    return (presence, )
+def translit_chs_to_jpp(chs: str) -> str:
+    # presence = SHEETS[SHEET_IDX].show_str_to_jpp(chs)
+    # msg = ""
+    # return (presence, )
+    return SHEETS[SHEET_IDX].show_str_to_jpp(chs)
 
 def l_output_file(path: str, name_jpp: str, overwrite: bool, msg_: str) -> str:
     msgs: List[str] = []
@@ -190,7 +191,7 @@ with gr.Blocks(
                 in_btn_parse_sheet = gr.Button(value="解析字表")
         with gr.Row():
             with gr.Column():
-                ou_console = gr.Textbox(label="處理結果", lines=4, interactive=False, max_lines=4)
+                ou_console = gr.Textbox(label="處理結果", lines=10, interactive=False, max_lines=4)
             with gr.Column():
                 in_test_text = gr.Textbox(label="測試文本", interactive=True)
                 in_btn_get_test_text_trans = gr.Button(value="轉換")

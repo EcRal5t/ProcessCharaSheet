@@ -178,8 +178,8 @@ class Sheet:
     def __parse_chara(chara: str) -> str:
         return chara.strip()
     @staticmethod
-    def __parse_meaning(meaning_: List[str]) -> str:
-        meaning = "".join(meaning_)
+    def __parse_meaning(meaning_: List[str], delimiter: str = "") -> str:
+        meaning = delimiter.join(meaning_)
         if len(meaning)>0 and meaning[-1] in ["。", "；"]: meaning = meaning[:-1]
         return meaning.strip()
     @staticmethod
