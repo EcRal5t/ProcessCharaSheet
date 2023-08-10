@@ -11,7 +11,7 @@ with open('rules/rule_j2i.csv', 'r', encoding='utf-8') as f:
     for line in reader:
         line_:List[Union[str, List[str]]] = list(map(lambda x:x.split("|")if"|"in x else x, line))
         RULES.append(line_)
-tone_rules = OmegaConf.load("rules/rule_tone.yaml")
+tone_rules:DictConfig = OmegaConf.load("rules/rule_tone.yaml")  # type: ignore
 
 pron_format    = '^[a-z]{1,10}\\d{0,2}$'
 #initial_format = '^(n[jg]?|bb?|dd?|[zcs][hrjl]?|[ptkg]h?|[hmqfvwjl])([wv]?)(?=[aeoiuymn])'
