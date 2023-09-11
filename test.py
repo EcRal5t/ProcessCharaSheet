@@ -41,21 +41,25 @@ if __name__ == '__main__':
     else:
         outfile = sys.stdout
     
-    candidate: List[str] = []
+    candidate: List[List[str]] = []
     if syllable:
-        candidate.append(syllable)
+        candidate.append(syllable.split("/"))
     elif args_config.input and os.path.exists(args_config.input):
         infile = open(args_config.input, 'r', encoding='utf-8').readlines()
-        candidate.extend([line.strip() for line in infile])
+        candidate.extend([line.strip().split("/") for line in infile])
     else:
         args_parser.error("文件不存在")
     
     if args_config.mode == 'jpp2ipa':
-        for syllable in candidate:
-            syllable_splited, ipa = get_ipa_from_raw(syllable, locale_rules, args_config.loc)
-            output_str = f"{syllable} -> {syllable_splited} -> {ipa} -> {format_ipa(ipa)}"
+        for syllables in candidate:
+            syllable_splited, ipa = get_ipa_from_raw(syllables[0], locale_rules, args_config.loc)
+            output_str = f"{syllables[0]} -> {syllable_splited} -> {ipa} -> {format_ipa(ipa)}"
             print(output_str, file=outfile)
     elif args_config.mode == 'split_jpp':
-        for syllable in candidate:
-            syllable_splited = splite_jpp(syllable)
-            print("\t".join(syllable_splited), file=outfile)
+        for syllables in candidate:
+            result: List[List[str]] = []
+            for syllable in syllables:
+                syllable_s = splite_jpp(syllable)
+                result.append([syllable_s[0], syllable_s[1]+syllable_s[2], syllable_s[3]])
+            result_ = [(i[0] if len(set(i))==1 else "/".join(i)) for i in zip(*result)]
+            print(",".join(result_), file=outfile)

@@ -27,28 +27,29 @@ class Chara:
             if any([p in __o.prons for p in self.prons]) and (self.mean!="" and self.mean==__o.mean): return True
             if all([p in __o.prons for p in self.prons]) or all([p in self.prons for p in __o.prons]): return True
             return False
-        def norm_and_to_ipa(self, norm_rule: List[Term], pron_rule: List[Term], tone_rule: Dict):
+        def norm_and_to_ipa(self, norm_rule: List[Term], pron_rule: List[Term], mark_rule: ToneDict, tone_rule: ToneDict): # j2j j2i t_j2j t_j2i
             split_prons = sorted([split_jpp(p) for p in self.prons], key=lambda x:x[0][1]+x[0][2])
             jpps: List[str] = []
             ipas: List[str] = []
             for pron_, tone_ in split_prons:
-                pron_jpp = pron_translate(rules=norm_rule, inp=pron_, to_jpp_or_ipa=None)
+                pron_jpp = pron_translate(rules=norm_rule, inp=pron_,    to_jpp_or_ipa=None)
                 pron_ipa = pron_translate(rules=pron_rule, inp=pron_jpp, to_jpp_or_ipa=False)
                 checked_tone_mark = "舒聲" if pron_[2] not in ["p", "t", "k", "h"] else "入聲"
-                tone = tone_translate(rules=tone_rule[checked_tone_mark], tone_mark=tone_)
-                jpps.append(pron_jpp[0]+pron_jpp[1]+pron_jpp[2]+tone_)
-                ipas.append(pron_ipa[0]+pron_ipa[1]+pron_ipa[2]+tone)
+                tone_jpp = tone_translate(rules=mark_rule.get(checked_tone_mark, {}), tone_mark=tone_,    emitable=True)
+                tone_ipa = tone_translate(rules=tone_rule.get(checked_tone_mark, {}), tone_mark=tone_jpp, emitable=False)
+                jpps.append(pron_jpp[0]+pron_jpp[1]+pron_jpp[2]+tone_jpp)
+                ipas.append(pron_ipa[0]+pron_ipa[1]+pron_ipa[2]+tone_ipa)
             self.prons = jpps
             self.ipas = ipas
-        def norm_and_to_jpp(self, norm_rule: List[Term], pron_rule: List[Term], tone_rule: Dict):
+        def norm_and_to_jpp(self, norm_rule: List[Term], pron_rule: List[Term], tone_rule: ToneDict):
             split_prons = sorted([split_ipa(p) for p in self.ipas], key=lambda x:x[0][1]+x[0][2])
             jpps: List[str] = []
             ipas: List[str] = []
             for pron_, tone_ in split_prons:
-                pron_ipa = pron_translate(rules=norm_rule, inp=pron_, to_jpp_or_ipa=None)
+                pron_ipa = pron_translate(rules=norm_rule, inp=pron_,    to_jpp_or_ipa=None)
                 pron_jpp = pron_translate(rules=pron_rule, inp=pron_ipa, to_jpp_or_ipa=True)
                 checked_tone_mark = "舒聲" if pron_[2] not in ["p", "t", "k", "ʔ"] else "入聲"
-                tone = tone_translate(rules=tone_rule[checked_tone_mark], tone_mark=tone_)
+                tone = tone_translate(rules=tone_rule.get(checked_tone_mark, {}), tone_mark=tone_)
                 jpps.append(pron_jpp[0]+pron_jpp[1]+pron_jpp[2]+tone)
                 ipas.append(pron_ipa[0]+pron_ipa[1]+pron_ipa[2]+tone_)
             self.prons = jpps
@@ -90,15 +91,15 @@ class Chara:
                     logging.info(f"{self.index} 合併: {self.chara}: [{i}]{self.multiprons[i]}, [{i+1+j}]{self.multiprons[i+1+j]} => {multiprons[i]}")
 
         self.multiprons = [m for m in multiprons if len(m.prons)>0]
-    def to_ipa(self, norm_rule: List[Term], pron_rule: List[Term], tone_rule: Dict) -> None:
+    def to_ipa(self, norm_rule: List[Term], pron_rule: List[Term], mark_rule: ToneDict, tone_rule: ToneDict) -> None:
         for i in self.multiprons:
             try:
-                i.norm_and_to_ipa(norm_rule, pron_rule, tone_rule)
+                i.norm_and_to_ipa(norm_rule, pron_rule, mark_rule, tone_rule)
             except Exception as e:
                 logging.error(f"{self.index} 未識別的音節 {self.chara}, {'/'.join([str(i) for i in self.multiprons])},【{e.args[0]}】")
                 logging.debug(e)
                 continue
-    def to_jpp(self, norm_rule: List[Term], pron_rule: List[Term], tone_rule: Dict) -> None:
+    def to_jpp(self, norm_rule: List[Term], pron_rule: List[Term], tone_rule: ToneDict) -> None:
         for i in self.multiprons:
             try:
                 i.norm_and_to_jpp(norm_rule, pron_rule, tone_rule)
@@ -168,7 +169,7 @@ class Sheet:
                 i.to_jpp(self.rule.i2i, self.rule.i2j, self.rule.tone_i2j)
         if is_set_jpp and not is_set_ipa: # 只有 jpp 沒有 ipa
             for i in self.entry_list:
-                i.to_ipa(self.rule.j2j, self.rule.j2i, self.rule.tone_j2i)
+                i.to_ipa(self.rule.j2j, self.rule.j2i, self.rule.tone_j2j, self.rule.tone_j2i)
         if not no_sim_to_trad:
             self.__sim_2_trad(keep_s2t=keep_sim_to_trad)
         logging.info("解析完成")

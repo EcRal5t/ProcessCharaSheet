@@ -4,6 +4,8 @@ import csv
 from omegaconf import DictConfig, OmegaConf
 from typing import Optional, Set, List, Tuple, Union, Dict
 from collections import defaultdict
+ToneDictBase = Dict[int|str, int|str]
+ToneDict = Dict[str, ToneDictBase]
 
 class Term:
     b_i: str
@@ -27,6 +29,7 @@ class Rule:
     i2j: Dict[str, List[Term]]
     j2i: Dict[str, List[Term]]
     j2j: Dict[str, List[Term]]
+    tone_j2j: DictConfig
     tone_j2i: DictConfig
     base_path: str
     class Selected:
@@ -34,8 +37,9 @@ class Rule:
         i2j: List[Term]
         j2i: List[Term]
         j2j: List[Term]
-        tone_j2i: Dict[str, Dict[Union[int, str], Union[int, str]]] = {}
-        tone_i2j: Dict[str, Dict[Union[int, str], Union[int, str]]] = {}
+        tone_j2j: Dict[str, Dict[int|str, int|str]] = {}
+        tone_j2i: Dict[str, Dict[int|str, int|str]] = {}
+        tone_i2j: Dict[str, Dict[int|str, int|str]] = {}
         def tone_j2i_to_i2j(self):
             for k,v in self.tone_j2i.items():
                 self.tone_i2j[k] = {v_:k_ for k_,v_ in v.items()}
@@ -46,13 +50,15 @@ class Rule:
         i2j_path = os.path.join(base_path, "rule_i2j.csv")
         j2j_path = os.path.join(base_path, "rule_j2j.csv")
         j2i_path = os.path.join(base_path, "rule_j2i.csv")
-        tone_path = os.path.join(base_path, "rule_tone.yaml")
+        tone_j2j_path = os.path.join(base_path, "rule_tone_j2j.yaml")
+        tone_j2i_path = os.path.join(base_path, "rule_tone_j2i.yaml")
         self.i2i, msg_1 = Rule.__read_csv(i2i_path)
         self.i2j, msg_2 = Rule.__read_csv(i2j_path)
         self.j2i, msg_3 = Rule.__read_csv(j2i_path)
         self.j2j, msg_4 = Rule.__read_csv(j2j_path)
-        self.tone_j2i, msg_5 = Rule.__read_yml(tone_path)
-        msg = "\n".join(filter(lambda x: x != "", [msg_1, msg_2, msg_3, msg_4, msg_5]))
+        self.tone_j2j, msg_5 = Rule.__read_yml(tone_j2j_path)
+        self.tone_j2i, msg_6 = Rule.__read_yml(tone_j2i_path)
+        msg = "\n".join(filter(lambda x: x != "", [msg_1, msg_2, msg_3, msg_4, msg_5, msg_6]))
         return msg
     
     def reload(self) -> str:
@@ -64,16 +70,17 @@ class Rule:
         rule_seleted.i2j, msg_i2j = self.__select_in_single_dict(locate, append, self.i2j)
         rule_seleted.j2i, msg_j2i = self.__select_in_single_dict(locate, append, self.j2i)
         rule_seleted.j2j, msg_j2j = self.__select_in_single_dict(locate, append, self.j2j)
+        rule_seleted.tone_j2j = self.tone_j2j.get(locate, OmegaConf.create())
         rule_seleted.tone_j2i = self.tone_j2i.get(locate, OmegaConf.create())
         rule_seleted.tone_j2i_to_i2j()
-        msgs  = [msg_i2i, msg_i2j, msg_j2i, msg_j2j]
+        msgs_ = [msg_i2i, msg_i2j, msg_j2i, msg_j2j]
         title = ["i2i", "i2j", "j2i", "j2j"]
-        msgs  = [title+": "+msg.strip() for title, msg in zip(title, msgs) if msg.strip() != ""]
+        msgs  = [title+": "+msg_.strip() for title, msg_ in zip(title, msgs_) if msg_.strip() != ""]
         return rule_seleted, ", ".join(msgs)
     
     @staticmethod
     def __select_in_single_dict(locate: str, append: List[Union[str, int]], d: Dict[str, List[Term]]) -> Tuple[List[Term], str]:
-        def __s(l: Union[int, str], d: Dict[str, List[Term]]) -> Tuple[List[Term], str]:
+        def __s(l: int|str, d: Dict[str, List[Term]]) -> Tuple[List[Term], str]:
             if l in d:
                 return d[l], ""
             elif str(l) in d:
@@ -161,28 +168,28 @@ def split_jpp(syllable: str) -> Tuple[Tuple[str, str, str], str]:
     cod = cod[0] if cod!=None else ''
     ton = ton[0] if ton!=None else ''
     vows = syllable[len(ini):-(len(cod)+len(ton))] if cod!='' or ton!='' else syllable[len(ini):]
-    # syllable_splited = norm_jpp((ini, vows, cod))
+    syllable_splited = norm_jpp((ini, vows, cod))
     return ((ini, vows, cod), ton)
 
 # 正則化j++音節
-# def norm_jpp(splited: Tuple[str, str, str]) -> Tuple[str, str, str]:
-#     ini, vows, cod = splited
-#     if splited[0]=="0": ini = "" # 0 -> 空
-#     if splited[0]!="" and len(splited[1])>=2:
-#         if (splited[1]in["ie"]and splited[2]!="")or splited[1]in["ieu"]:
-#             vows = splited[1][1:] # iek -> ek, iet -> et, iep -> ep, ieu -> eu
-#         if splited[0][-1]=="j"  and (splited[1][0:2]in["ia","ie","io"]):
-#             vows = splited[1][1:] # jia -> ja, njia -> nja, sjia -> sja
-#         if splited[0][-1]=="w"  and (splited[1][0:2]in["ua","ue","uo"]):
-#             vows = splited[1][1:] # wua -> wa, kwua -> kwa
-#     return (ini, vows, cod)
+def norm_jpp(splited: Tuple[str, str, str]) -> Tuple[str, str, str]:
+    ini, vows, cod = splited
+    if splited[0]=="0": ini = "" # 0 -> 空
+    if splited[0]!="" and len(splited[1])>=2:
+        if (splited[1]in["ie"]and splited[2]!="")or splited[1]in["ieu"]:
+            vows = splited[1][1:] # iek -> ek, iet -> et, iep -> ep, ieu -> eu
+        if splited[0][-1]=="j"  and (splited[1][0:2]in["ia","ie","io"]):
+            vows = splited[1][1:] # jia -> ja, njia -> nja, sjia -> sja
+        if splited[0][-1]=="w"  and (splited[1][0:2]in["ua","ue","uo"]):
+            vows = splited[1][1:] # wua -> wa, kwua -> kwa
+    return (ini, vows, cod)
 
 # 按照傳入的規則将切分开的j++转为IPA
 # eg. pron_translate(轉換規則, ['j', 'a', 't']) -> ['j', 'ɐ', 't']
 # to_jpp_or_ipa -> True: 轉換為j++音節
 # to_jpp_or_ipa -> False: 轉換為IPA
 # to_jpp_or_ipa -> None: 不轉換
-def pron_translate(rules: List[Term], inp: Tuple[str, str, str], to_jpp_or_ipa: Optional[bool]) -> Tuple[str, str, str]:
+def pron_translate(*, rules: List[Term], inp: Tuple[str, str, str], to_jpp_or_ipa: Optional[bool]) -> Tuple[str, str, str]:
     if "ŋ̍" in inp[1]:
         print("break point")
     ini_transed: Optional[str] = None
@@ -219,17 +226,16 @@ def pron_translate(rules: List[Term], inp: Tuple[str, str, str], to_jpp_or_ipa: 
     return (ini_transed, vow_transed, con_transed)
 
 
-def tone_translate(rules: Dict, tone_mark: str) -> str:
-    if tone_mark != "":
-        tone_mark = tone_mark
-        if tone_mark in rules:
-            transed = str(rules[tone_mark])
-        elif tone_mark.isdigit() and int(tone_mark) in rules:
-            transed = str(rules[int(tone_mark)])
-        else:
-            raise TypeError(f"調號不存在: [{tone_mark}] 在 {rules} 內")
+def tone_translate(*, rules: ToneDictBase, tone_mark: str, emitable:bool=False) -> str:
+    transed = ""
+    if tone_mark in rules:
+        transed = str(rules[tone_mark])
+    elif tone_mark.isdigit() and int(tone_mark) in rules:
+        transed = str(rules[int(tone_mark)])
+    elif emitable:
+        transed = tone_mark
     else:
-        transed = ""
+        raise TypeError(f"調號不存在: [{tone_mark}] 在 {rules} 內")
     return transed
 
 # 将纯j++表示的元音串转成IPA
@@ -256,14 +262,14 @@ ipa2jpp_cod = { v:k for k,v in jpp2ipa_cod.items() }
 ipa2jpp_cod.update({ v:k for k,v in jpp2ipa_cod_mark.items() })
 
 ipa_tone_format = '(\\d*)$'
-ipa_vows_format = '([iyɯueɵoəɛøœɔæɐaɒɿ]+|ŋ̩|n̩|m̩|ŋ̍)'
+ipa_vows_format = '([iyɯueɵoəɛøœɔæɐaɒɿɪʊ]+|ŋ̩|n̩|m̩|ŋ̍)'
 ipa_coda_format = '([(mnŋptk)̚?]?|ʔ?)$'
 
 # 将 IPA 音节划分成辅音声母、元音和辅音韵尾
 # eg. split_ipa('jat1') -> ['j', 'a', 't']
 def split_ipa(syllable: str) -> Tuple[Tuple[str, str, str], str]:
-    if syllable == "0ŋ̩22":
-        True==True
+    # if syllable == "0ŋ̩22":
+    #     True==True
     
     tone = re.search(ipa_tone_format, syllable)
     tone = "" if tone is None else tone[0]
