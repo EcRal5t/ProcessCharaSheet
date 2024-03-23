@@ -1,9 +1,9 @@
 import os
 import re
 import csv
-from omegaconf import DictConfig, OmegaConf
 from typing import Optional, Set, List, Tuple, Union, Dict
 from collections import defaultdict
+from omegaconf import DictConfig, OmegaConf
 ToneDictBase = Dict[int|str, int|str]
 ToneDict = Dict[str, ToneDictBase]
 

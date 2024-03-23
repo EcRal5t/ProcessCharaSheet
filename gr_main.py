@@ -16,20 +16,20 @@ SHEET_IDX: int = 0
 SHEET_RAW: pd.ExcelFile
 def parse_sheet(df: pd.DataFrame, 
                 locate: str, append_rule: List[Union[str, int]], 
-                char_col : int,
-                pron_cols: List[int],
-                mean_cols: List[int],
-                ipa_cols : List[int],
-                pron_nd_cols: List[int],
+                char_col_idx : int,
+                pron_col_idxs: List[int],
+                mean_col_idxs: List[int],
+                ipa_col_idxs : List[int],
+                pron_nd_col_idxs: List[int],
                 no_sim_to_trad: bool, keep_sim_to_trad: bool
                 ) -> str:
     global SHEETS, SHEET_IDX
     s = Sheet(df, locate, append_rule, 
-            char_col,
-            pron_cols, 
-            mean_cols,
-            ipa_cols,
-            pron_nd_cols,
+            char_col_idx,
+            pron_col_idxs, 
+            mean_col_idxs,
+            ipa_col_idxs,
+            pron_nd_col_idxs,
             no_sim_to_trad, keep_sim_to_trad)
     if len(SHEETS) <= SHEET_IDX:
         SHEETS.append(s)
@@ -88,11 +88,11 @@ def l_parse_sheet(sheet_name: str, locate: str, append_rule_: str,
         return log("解析表", f"未設置讀音列", "ERROR"), in_btn_read_rule_file.update()
     f = SHEET_RAW.parse(SHEET_RAW.sheet_names.index(sheet_name), keep_default_na=False, dtype=str)
     parse_sheet(f, locate.strip(), append_rule_.split(","), # type: ignore
-                get_col_index(col_char), 
-                [get_col_index(col_pron)    for col_pron    in col_pron   .replace(" ", "").replace(",", "")],
-                [get_col_index(col_mean)    for col_mean    in col_mean   .replace(" ", "").replace(",", "")],
-                [get_col_index(col_ipa)     for col_ipa     in col_ipa    .replace(" ", "").replace(",", "")],
-                [get_col_index(col_pron_nd) for col_pron_nd in col_pron_nd.replace(" ", "").replace(",", "")],
+                 get_col_index(col_char), 
+                [get_col_index(col_pron)    for col_pron    in col_pron   ],
+                [get_col_index(col_mean)    for col_mean    in col_mean   ],
+                [get_col_index(col_ipa)     for col_ipa     in col_ipa    ],
+                [get_col_index(col_pron_nd) for col_pron_nd in col_pron_nd],
                 no_sim_to_trad, keep_sim_to_trad
     )
     
@@ -104,20 +104,7 @@ def l_read_locale_rule(locate_: str, append_rule_: str, msg_: str, ) -> str:
     msg_0 = RULE.reload()
     SHEETS[SHEET_IDX].rule, msg_1 = RULE.select(locate, append_rule) # type: ignore
     return log("讀取轉換規則檔", f"在 {locate} + {append_rule} 中讀取. {msg_0}, {msg_1}") + "\n" + msg_
-    
-def get_col_index(colname: str) -> int:
-    if colname.isdigit():
-        return int(colname)
-    elif len(colname)>1:
-        r = [get_col_index(i) for i in colname.replace(" ", "").replace(",", "") if i != ""]
-        logging.warning(f"多個欄位名: {colname}，取第一個: {r[0]}")
-        return r[0]
-    elif colname.isupper():
-        return ord(colname)-65
-    else:
-        return ord(colname)-97
-        
-        
+
 def translit_chs_to_jpp(chs: str) -> str:
     # presence = SHEETS[SHEET_IDX].show_str_to_jpp(chs)
     # msg = ""

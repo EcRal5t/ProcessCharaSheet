@@ -1,37 +1,31 @@
-import argparse
 import os
 import sys
-from jpp_trasnlator import *
+import argparse
+from typing import Optional, Set, List, Tuple, Union, Dict
 
-def get_ipa_from_raw(syllable, locale_rules, locale_name):
-    syllable_splited = []
-    try:
-        syllable_splited = splite_jpp(syllable)
-        ipa = get_ipa(locale_rules, syllable_splited, locale_name)
-        return syllable_splited, ipa
-    except TypeError as e:
-        print("含有不合法拼音或未兼容音素 ", syllable_splited, e)
-        raise e
+from gr_trasnlator import RULE, split_jpp
+from gr_struct import Sheet, Chara
 
 
 if __name__ == '__main__':
     args_parser = argparse.ArgumentParser(description="jpp 工具    By EcisralHetha")
-    args_parser.add_argument('-j', '--jpp', type=str, help='j++ syllable', required=False)
-    args_parser.add_argument('-i', '--input', type=str, help='input from file', required=False)
+    args_parser.add_argument('-i', '--input', type=str, help='j++/ipa syllable', required=False)
+    args_parser.add_argument('-f', '--filepath', type=str, help='input from file', required=False)
     args_parser.add_argument('-o', "--output", type=str, help='output to file, No specifying for to console', default=None, required=False)
     
     args_parser.add_argument('-l', '--loc', type=str, help='地名', required=False, default='')
-    args_parser.add_argument('-m', '--mode', type=str, help='輸出模式', choices=['jpp2ipa', 'split_jpp'], default='jpp2ipa')
+    args_parser.add_argument('-m', '--mode', type=str, help='輸出模式', choices=['jpp2ipa', 'ipa2jpp', 'split_jpp'], default='jpp2ipa')
     #args_parser.add_argument('-v', '--version', action='version', version='v0.5/211017')
     
+    args_parser.add_argument('-t', '--term', action='store_true', help='未分割的行作輸入')
+        
     args_config = args_parser.parse_args()
-    syllable = args_config.jpp
-    locale_rules = [0, 1, args_config.loc]
+    syllable: str = args_config.input
     
-    if (not syllable and not args_config.input) or (syllable and args_config.input):
-        args_parser.error("-j 和 -i 中需輸入其中一个參數")
-    if args_config.mode in ["jpp2ipa"] and not args_config.loc:
-        args_parser.error("轉爲 ipa 時需輸入 -loc 地名參數")
+    if (not syllable and not args_config.filepath) or (syllable and args_config.filepath):
+        args_parser.error("-i 和 -f 中需輸入其中一个參數")
+    if args_config.mode in ["jpp2ipa", "ipa2jpp"] and not args_config.loc:
+        args_parser.error("j++ 和 ipa 互轉時需輸入 -loc 地名參數")
     #print(args_config)
     
     if args_config.output:
@@ -43,23 +37,38 @@ if __name__ == '__main__':
     
     candidate: List[List[str]] = []
     if syllable:
-        candidate.append(syllable.split("/"))
-    elif args_config.input and os.path.exists(args_config.input):
-        infile = open(args_config.input, 'r', encoding='utf-8').readlines()
-        candidate.extend([line.strip().split("/") for line in infile])
+        if args_config.term:
+            candidate.append(Sheet.read_row_syllable(syllable.strip().split(","))[1])
+        else:
+            candidate.append(syllable.strip().split("/"))
+    elif args_config.filepath and os.path.exists(args_config.filepath):
+        infile = open(args_config.filepath, 'r', encoding='utf-8').readlines()
+        for line in infile:
+            if args_config.term:
+                candidate.append(Sheet.read_row_syllable(line.strip().split(","))[1])
+            else:
+                candidate.append(line.strip().split("/"))
     else:
         args_parser.error("文件不存在")
     
     if args_config.mode == 'jpp2ipa':
+        rule, _ = RULE.select(args_config.loc, [0, 1])
         for syllables in candidate:
-            syllable_splited, ipa = get_ipa_from_raw(syllables[0], locale_rules, args_config.loc)
-            output_str = f"{syllables[0]} -> {syllable_splited} -> {ipa} -> {format_ipa(ipa)}"
-            print(output_str, file=outfile)
+            chara: Chara = Chara(0, "_", syllables, "", [])
+            chara.to_ipa(rule.j2j, rule.j2i, rule.tone_j2j, rule.tone_j2i)
+            print(chara, file=outfile)
+    elif args_config.mode == 'ipa2jpp':
+        rule, _ = RULE.select(args_config.loc, [0, 1])
+        for syllables in candidate:
+            chara: Chara = Chara(0, "_", [], "", syllables)
+            chara.to_jpp(rule.i2i, rule.i2j, rule.tone_i2j)
+            print(chara, file=outfile)
+
     elif args_config.mode == 'split_jpp':
         for syllables in candidate:
             result: List[List[str]] = []
             for syllable in syllables:
-                syllable_s = splite_jpp(syllable)
-                result.append([syllable_s[0], syllable_s[1]+syllable_s[2], syllable_s[3]])
+                syllable_s, syllable_t = split_jpp(syllable)
+                result.append([syllable_s[0], syllable_s[1]+syllable_s[2], syllable_t])
             result_ = [(i[0] if len(set(i))==1 else "/".join(i)) for i in zip(*result)]
-            print(",".join(result_), file=outfile)
+            print(" | ".join(result_), file=outfile)

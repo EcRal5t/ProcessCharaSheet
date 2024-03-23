@@ -134,14 +134,15 @@ class Sheet:
         logging.info(f"總共 {len(df)} 行")
         self.logger("讀取字表", f"總共 {len(df)} 行")
         for sheet_index in range(len(df)):
-            sheet_row = df.loc[sheet_index]
+            sheet_row  = df.loc[sheet_index]
+            assert isinstance(sheet_row, pd.Series)
             # assert df.loc[sheet_index][use_col_index['pron'][0]] != "0.0", sheet_index
             # logging.debug("第 %d 行: %s", sheet_index, sheet_row)
             if not sheet_row[char_col] or isinstance(sheet_row[char_col], float): continue
             chara     = Sheet.__parse_chara(sheet_row[char_col])
             if chara in ["□"]: continue
-            meaning   = Sheet.__parse_meaning([sheet_row[i] for i in mean_cols])
-            _, ipas   = Sheet.__read_row_syllable([sheet_row[i].strip() for i in ipa_cols])
+            meaning   = Sheet.__parse_meaning([sheet_row[i] for i in pron_cols])
+            _, ipas   = Sheet.read_row_syllable([sheet_row[i].strip() for i in ipa_cols])
             syllables = Sheet.__parse_row_all_pron(sheet_index+2, chara, 
                             [sheet_row[i].strip() for i in pron_cols],
                             [sheet_row[i].strip() for i in pron_nd_cols])
@@ -159,21 +160,21 @@ class Sheet:
         self.entry_list = entry_list
         self.chara_index_dict = chara_index_dict
         self.rule, msg = RULE.select(locate, append_rule)
-        logging.info(msg)
+        logging.info("讀取轉寫規則: " + msg)
         self.logger("讀取轉寫規則: ", msg)
         
         is_set_ipa = len(ipa_cols)>0
         is_set_jpp = len(pron_cols)>0
         if is_set_ipa and not is_set_jpp: # 只有 ipa 沒有 jpp
+            logging.info("正在將音標轉換至粵拼")
             for i in self.entry_list:
                 i.to_jpp(self.rule.i2i, self.rule.i2j, self.rule.tone_i2j)
         if is_set_jpp and not is_set_ipa: # 只有 jpp 沒有 ipa
+            logging.info("正在將粵拼轉換至音標")
             for i in self.entry_list:
                 i.to_ipa(self.rule.j2j, self.rule.j2i, self.rule.tone_j2j, self.rule.tone_j2i)
         if not no_sim_to_trad:
             self.__sim_2_trad(keep_s2t=keep_sim_to_trad)
-        logging.info("解析完成")
-        self.logger("讀取字表", "完成")
     
     @staticmethod
     def __parse_chara(chara: str) -> str:
@@ -185,8 +186,8 @@ class Sheet:
         return meaning.strip()
     @staticmethod
     def __parse_row_all_pron(rowidx:int, chara: str, pron_col_content: List[str], pron_col_nd_content: List[str]) -> List[str]:
-        is_valid_main, pron_main = Sheet.__read_row_syllable(pron_col_content)
-        is_valid_sub , pron_sub = Sheet.__read_row_syllable(pron_col_nd_content)
+        is_valid_main, pron_main = Sheet.read_row_syllable(pron_col_content)
+        is_valid_sub , pron_sub = Sheet.read_row_syllable(pron_col_nd_content)
         if not is_valid_main or not is_valid_sub:
             logging.warning(f"{rowidx} 分隔符數目不匹配: {chara} {pron_main} {pron_sub}")
         # supposed to be the last column and there is no pron_sub column
@@ -195,10 +196,10 @@ class Sheet:
                 logging.warning(f"{rowidx} 音節空缺: {chara} {pron_sub}")
         return pron_main + pron_sub
     @staticmethod
-    def __read_row_syllable(elements: List[str]) -> Tuple[bool, List[str]]:
+    def read_row_syllable(elements: List[str]) -> Tuple[bool, List[str]]:
         if all([i=="" for i in elements]): return (True, [])
         elements = [i if isinstance(i, str) else str(i) for i in elements]
-        elements[0] = elements[0] if elements[0]!="0.0" else "" # might costly
+        elements[0] = elements[0] if elements[0]!="0.0" else ""
         elements_split = [i.split('/') for i in elements]
         seperator_count = [len(e)-1 for e in elements_split]
         seperator_count_filtered = list(filter(lambda x: x>0, seperator_count))
@@ -220,9 +221,11 @@ class Sheet:
         self.rule, msg = RULE.select(locale, append)
         return msg
     
+    s2t_converter: opencc.OpenCC
+    s2t_keeped_char: Set[str]
     def __sim_2_trad(self, keep_s2t: bool) -> None:
         self.s2t_converter = opencc.OpenCC('s2t.json')
-        s2t_keeped_char = {
+        self.s2t_keeped_char = {
             "干","后","系","历","板","表","丑","范","丰","刮","胡","回",
             "伙","姜","借","克","困","里","帘","面","蔑","千","秋","松",
             "咸","向","余","郁","御","愿","云","芸","沄","致","制","朱",
@@ -238,11 +241,11 @@ class Sheet:
         for entry in self.entry_list:
             chara = entry.chara
             chara_t = self.s2t_converter.convert(chara)
-            if (chara_t!=chara) and chara in s2t_keeped_char:
+            if (chara_t!=chara) and chara in self.s2t_keeped_char:
                 logging.debug(f"{entry.index} 簡轉繁未應用 {chara} -> {chara_t}")
                 self.logger("簡轉繁", f"{entry.index} 簡轉繁未應用 {chara} -> {chara_t}", "DEBUG")
                 pass
-            if (chara_t!=chara) and chara not in s2t_keeped_char:
+            if (chara_t!=chara) and chara not in self.s2t_keeped_char:
                 if chara_t in self.chara_index_dict:
                     if not keep_s2t:
                         logging.warning(f"{entry.index} 簡轉繁重複 {chara} -> {chara_t}")
@@ -262,16 +265,17 @@ class Sheet:
                     self.chara_index_dict.pop(chara)
                     continue
     
-    def query(self, chara: str) -> List[Chara.Pron]:
-        if chara in self.chara_index_dict:
-            return self.entry_list[self.chara_index_dict[chara]].multiprons
-        else:
-            return []
+    def query(self, charas: str) -> List[List[Chara.Pron]]:
+        result: List[List[Chara.Pron]] = []
+        for chara in charas:
+            if chara in self.chara_index_dict:
+                result.append(self.entry_list[self.chara_index_dict[chara]].multiprons)                
+            else:
+                result.append([])
+        return result
     
     def show_str_to_jpp(self, name: str) -> str:
-        output_name_list: List[List[Chara.Pron]] = []
-        for i in name:
-            output_name_list.append(self.query(i))
+        output_name_list = self.query(name)
         output_name_ = ""
         if all([len(j)==1 for j in output_name_list]) and all([len(j[0].prons)==1 for j in output_name_list]):
             output_name_ += output_name_list[0][0].prons[0].capitalize()
@@ -294,21 +298,33 @@ class Sheet:
             for prons in entry.multiprons:
             # for prons in sorted(entry.multiprons, key=lambda x:x.prons[0]):
                 ipas = "=".join(prons.ipas)
-                ou_pron = "=".join(prons.prons)
-                ou_ipa = "'" + ipas + "'" if "'" not in ipas else '"' + ipas + '"'
-                ou_mean = "'" + prons.mean + "'" if "'" not in prons.mean else '"' + prons.mean + '"'
+                out_pron = "=".join(prons.prons)
+                out_ipa = "'" + ipas + "'" if "'" not in ipas else '"' + ipas + '"'
+                out_mean = "'" + prons.mean + "'" if "'" not in prons.mean else '"' + prons.mean + '"'
                 
-                result += f"{',' if count_row>0 else ''}\n({count_row+1},'{entry.chara}','{ou_pron}','','','',{ou_ipa},{ou_mean})"
+                result += f"{',' if count_row>0 else ''}\n({count_row+1},'{entry.chara}','{out_pron}','','','',{out_ipa},{out_mean})"
                 count_row += 1
             count_chara += 1
         result += ";"
         return (count_row, count_chara, result)
 
+def get_col_index(colname: str) -> int:
+    if colname.isdigit():
+        return int(colname)
+    elif len(colname)>1:
+        r = [get_col_index(i) for i in colname.replace(" ", "").replace(",", "") if i != ""]
+        logging.warning(f"多個欄位名: {colname}，取第一個: {r[0]}")
+        return r[0]
+    elif colname.isupper():
+        return ord(colname)-65
+    else:
+        return ord(colname)-97
     
+
     
 def output_sql_header(output_name):
     return \
-"""CREATE TABLE `%s` (
+"""CREATE TABLE IF NOT EXISTS `%s` (
   `id` int NOT NULL,
   `chara` tinytext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `initial` tinytext CHARACTER SET armscii8 COLLATE armscii8_bin NOT NULL,
@@ -316,9 +332,9 @@ def output_sql_header(output_name):
   `coda` tinytext CHARACTER SET armscii8 COLLATE armscii8_bin NOT NULL,
   `tone` tinytext CHARACTER SET armscii8 COLLATE armscii8_bin NOT NULL,
   `ipa` tinytext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  `note` text CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL
+  `note` text CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  PRIMARY KEY(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-ALTER TABLE `%s` ADD PRIMARY KEY(`id`);
+TRUNCATE TABLE `%s`;
 
 INSERT INTO `%s` (`id`, `chara`, `initial`, `nuclei`, `coda`, `tone`, `ipa`, `note`) VALUES""".replace("%s", output_name)
