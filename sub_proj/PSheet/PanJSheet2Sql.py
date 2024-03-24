@@ -8,10 +8,11 @@ from typing import List, Tuple, Dict, Union, Optional, Any
 from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
 from openpyxl.styles.colors import Color
-# input_path = sys.argv[1] #'D:\\C_KheuyMyenDong\\Desktop\\Jyutdict\\泛粵字表\\本体\\泛粵字表 220609.xlsx'
-input_path = "Z:\\Proj\\Jyutdict\\泛粵字表\\本体\\泛粵字表 230806_.xlsx"
-time_str = datetime.datetime.now().strftime('_%Y%m%d')
 
+input_path = "Z:\\Proj\\Jyutdict\\泛粵字表\\本体\\泛粵字表 230806_.xlsx"
+output_dir = "Z:\\Proj\\Jyutdict\\泛粵字表\\Automatic\\"
+
+time_str = datetime.datetime.now().strftime('_%Y%m%d')
 regex_pure_alphabet = re.compile("^[a-z'0-9?/①-⑨_^*]+$")
 def str_format_enter_for_12(x: str) -> str:
     if len(regex_pure_alphabet.findall(x))>0: return x
@@ -158,7 +159,6 @@ headers_mark = main_sheet[5]
 headers_name = main_sheet[6]
 assert isinstance(headers, tuple) and isinstance(headers_mark, tuple) and isinstance(headers_name, tuple)
 
-output_dir = "Z:/Proj/Jyutdict/泛粵字表/Automatic/"
 sql_ifaamjyut_header = """CREATE TABLE `IFaamjyut` (
   `id` int(11) NOT NULL,
   `col` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,

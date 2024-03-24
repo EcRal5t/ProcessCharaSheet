@@ -1,12 +1,12 @@
 # encoding: utf-8
 # python3
-import pandas as pd
-import opencc
 import time
 import logging
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s | %(funcName)s: %(levelname)s] %(message)s')
-
 from typing import Optional, Any, List, Tuple, Dict, Callable, Union
+
+import pandas as pd
+import opencc
 
 from gr_trasnlator import *
 
@@ -35,8 +35,8 @@ class Chara:
                 pron_jpp = pron_translate(rules=norm_rule, inp=pron_,    to_jpp_or_ipa=None)
                 pron_ipa = pron_translate(rules=pron_rule, inp=pron_jpp, to_jpp_or_ipa=False)
                 checked_tone_mark = "舒聲" if pron_[2] not in ["p", "t", "k", "h"] else "入聲"
-                tone_jpp = tone_translate(rules=mark_rule.get(checked_tone_mark, {}), tone_mark=tone_,    emitable=True)
-                tone_ipa = tone_translate(rules=tone_rule.get(checked_tone_mark, {}), tone_mark=tone_jpp, emitable=False)
+                tone_jpp = tone_translate(rules=mark_rule.get(checked_tone_mark, {}), tone_mark=tone_, skippable=True)
+                tone_ipa = tone_translate(rules=tone_rule.get(checked_tone_mark, {}), tone_mark=tone_jpp)
                 jpps.append(pron_jpp[0]+pron_jpp[1]+pron_jpp[2]+tone_jpp)
                 ipas.append(pron_ipa[0]+pron_ipa[1]+pron_ipa[2]+tone_ipa)
             self.prons = jpps
@@ -141,7 +141,7 @@ class Sheet:
             if not sheet_row[char_col] or isinstance(sheet_row[char_col], float): continue
             chara     = Sheet.__parse_chara(sheet_row[char_col])
             if chara in ["□"]: continue
-            meaning   = Sheet.__parse_meaning([sheet_row[i] for i in pron_cols])
+            meaning   = Sheet.__parse_meaning([sheet_row[i] for i in mean_cols])
             _, ipas   = Sheet.read_row_syllable([sheet_row[i].strip() for i in ipa_cols])
             syllables = Sheet.__parse_row_all_pron(sheet_index+2, chara, 
                             [sheet_row[i].strip() for i in pron_cols],

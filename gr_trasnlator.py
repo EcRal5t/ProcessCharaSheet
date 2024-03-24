@@ -190,8 +190,8 @@ def norm_jpp(splited: Tuple[str, str, str]) -> Tuple[str, str, str]:
 # to_jpp_or_ipa -> False: 轉換為IPA
 # to_jpp_or_ipa -> None: 不轉換
 def pron_translate(*, rules: List[Term], inp: Tuple[str, str, str], to_jpp_or_ipa: Optional[bool]) -> Tuple[str, str, str]:
-    if "ŋ̍" in inp[1]:
-        print("break point")
+    # if "ŋ̍" in inp[1]:
+    #     print("break point")
     ini_transed: Optional[str] = None
     vow_transed: Optional[str] = None
     con_transed: Optional[str] = None
@@ -218,7 +218,13 @@ def pron_translate(*, rules: List[Term], inp: Tuple[str, str, str], to_jpp_or_ip
             con_transed = inp[2]
     else:
         if ini_transed is None:
-            ini_transed = ipa2jpp_ini[inp[0]] if to_jpp_or_ipa else jpp2ipa_ini[inp[0]]
+            if to_jpp_or_ipa:
+                ini_transed = ipa2jpp_ini[inp[0]]
+            else:
+                if False and inp[0] not in jpp2ipa_ini and inp[0][-1] == "w" and inp[0][:-1] in jpp2ipa_ini:
+                    ini_transed = jpp2ipa_ini[inp[0][:-1]] + "ʷ" # ngw -> ŋʷ, sw -> sʷ, fw -> fʷ ...
+                else:
+                    ini_transed = jpp2ipa_ini[inp[0]]
         if vow_transed is None:
             vow_transed = get_vows_jpp(inp[1]) if to_jpp_or_ipa else get_vows_ipa(inp[1])
         if con_transed is None:
@@ -226,16 +232,18 @@ def pron_translate(*, rules: List[Term], inp: Tuple[str, str, str], to_jpp_or_ip
     return (ini_transed, vow_transed, con_transed)
 
 
-def tone_translate(*, rules: ToneDictBase, tone_mark: str, emitable:bool=False) -> str:
+def tone_translate(*, rules: ToneDictBase, tone_mark: str, skippable:bool=False) -> str:
     transed = ""
     if tone_mark in rules:
         transed = str(rules[tone_mark])
     elif tone_mark.isdigit() and int(tone_mark) in rules:
         transed = str(rules[int(tone_mark)])
-    elif emitable:
+    elif skippable:
         transed = tone_mark
+    elif tone_mark == "":
+        raise ValueError(f"調號爲空")
     else:
-        raise TypeError(f"調號不存在: [{tone_mark}] 在 {rules} 內")
+        raise ValueError(f"調號不存在: [{tone_mark}] 在 {rules} 內")
     return transed
 
 # 将纯j++表示的元音串转成IPA
