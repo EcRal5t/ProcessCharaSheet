@@ -138,8 +138,9 @@ class Sheet:
             assert isinstance(sheet_row, pd.Series)
             # assert df.loc[sheet_index][use_col_index['pron'][0]] != "0.0", sheet_index
             # logging.debug("第 %d 行: %s", sheet_index, sheet_row)
+            # print(sheet_row)
             if not sheet_row[char_col] or isinstance(sheet_row[char_col], float): continue
-            chara     = Sheet.__parse_chara(sheet_row[char_col])
+            chara     = Sheet.__parse_chara(sheet_index, sheet_row[char_col])
             if chara in ["□"]: continue
             meaning   = Sheet.__parse_meaning([sheet_row[i] for i in mean_cols])
             _, ipas   = Sheet.read_row_syllable([sheet_row[i].strip() for i in ipa_cols])
@@ -157,6 +158,8 @@ class Sheet:
                 entry_list[chara_index_dict[chara]].append(Chara.Pron(syllables, meaning, ipas))
         logging.info(f"讀取 {len(entry_list)} 行")
         self.logger("讀取字表", f"讀取 {len(entry_list)} 行")
+        
+        for entry in entry_list: entry.rm_duplicate()
         self.entry_list = entry_list
         self.chara_index_dict = chara_index_dict
         self.rule, msg = RULE.select(locate, append_rule)
@@ -177,11 +180,14 @@ class Sheet:
             self.__sim_2_trad(keep_s2t=keep_sim_to_trad)
     
     @staticmethod
-    def __parse_chara(chara: str) -> str:
+    def __parse_chara(rowidx:int, chara: str) -> str:
+        if len(chara)>1:
+            logging.warning(f"{rowidx} 似乎含有多個字: {chara}")
+            return chara.strip()[0]
         return chara.strip()
     @staticmethod
-    def __parse_meaning(meaning_: List[str], delimiter: str = "") -> str:
-        meaning = delimiter.join(meaning_)
+    def __parse_meaning(meaning_: List[str], delimiter: str = "｜") -> str:
+        meaning = delimiter.join(filter(lambda x: x, meaning_))
         if len(meaning)>0 and meaning[-1] in ["。", "；"]: meaning = meaning[:-1]
         return meaning.strip()
     @staticmethod
@@ -248,8 +254,8 @@ class Sheet:
             if (chara_t!=chara) and chara not in self.s2t_keeped_char:
                 if chara_t in self.chara_index_dict:
                     if not keep_s2t:
-                        logging.warning(f"{entry.index} 簡轉繁重複 {chara} -> {chara_t}")
-                        self.logger("簡轉繁", f"{entry.index} 簡轉繁重複 {chara} -> {chara_t}", "WARNING")
+                        logging.warning(f"{entry.index} 簡轉繁碰撞 {chara} -> {chara_t}")
+                        self.logger("簡轉繁", f"{entry.index} 簡轉繁碰撞 {chara} -> {chara_t}", "WARNING")
                         entry.status = -1
                         continue
                     else:

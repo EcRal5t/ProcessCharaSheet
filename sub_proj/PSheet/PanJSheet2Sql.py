@@ -1,3 +1,4 @@
+# %%
 import numpy as np
 import tqdm
 import re
@@ -9,10 +10,13 @@ from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
 from openpyxl.styles.colors import Color
 
-input_path = "Z:\\Proj\\Jyutdict\\泛粵字表\\本体\\泛粵字表 230806_.xlsx"
+from ExcelColor import theme_and_tint_to_rgb
+
+# %%
+input_path = "Z:\\Proj\\Jyutdict\\泛粵字表\\本体\\泛粵字表 240723.xlsx"
 output_dir = "Z:\\Proj\\Jyutdict\\泛粵字表\\Automatic\\"
 
-time_str = datetime.datetime.now().strftime('_%Y%m%d')
+time_str = datetime.datetime.now().strftime('%Y%m%d')
 regex_pure_alphabet = re.compile("^[a-z'0-9?/①-⑨_^*]+$")
 def str_format_enter_for_12(x: str) -> str:
     if len(regex_pure_alphabet.findall(x))>0: return x
@@ -30,24 +34,51 @@ def str_format_enter_for_12(x: str) -> str:
     x = x.replace("\n", "; ")
     x = x.replace("  ", " ")
     return x.strip()
-def str_format_enter_for_0(x: str) -> str:
-    x = x.replace("：需要例句", "")
-    x = x.replace("⚠意味不明", "{？}").strip()
+def str_format_enter_for_m2(x: str) -> str:
+    if "需要例句" in x:
+        x = x.replace("：需要例句", "")
+        x = x.replace("，需要例句", "")
+    # x = x.replace("⚠意味不明", "{？}").strip()
     if x[-1]=="$": x = x[:-1]
     return x
 
 
 HEADER_INFO_COL_LENGTH = []
-HEADER_INFO_COL_NAME = ['繁', '綜']
-HEADER_INFO_MARK = [0, 0]
-HEADER_INFO_FULL_NAME = [['字', ''], ['綜合音', '']]
-HEADER_INFO_COLOR = ['', '']
-HEADER_INFO_NOTE = ['', '']
+HEADER_INFO_COL_NAME  = ['綜', '釋', '繁', ]
+HEADER_INFO_MARK      = [0, 0, 0]
+HEADER_INFO_FULL_NAME = [['綜合音', ''], ['簡釋', ''], ['字', '']]
+HEADER_INFO_COLOR     = ['', '', '']
+HEADER_INFO_NOTE      = ['', '', '']
 
 
 regex_block_email = re.compile("@[a-zA-Z0-9\\.]+?@[a-zA-Z0-9]+?\\.[a-zA-Z]+\\b")
 regex_block_name = re.compile("\n\t-.+?(\n|$)")
-regex_block_info = lambda x: regex_block_name.sub("\t-[Anony]\n", regex_block_email.sub("@[Anony]", x.strip()) if"@"in x else x.strip())
+def regex_block_info(s: str) -> str:
+    if not s: return ""
+    x = s.strip()
+    if "@" in x: x = regex_block_email.sub("@[Anony]", x)
+    if "-" in x: x = regex_block_name.sub("\t-[Anony]\n", x)
+    return x
+
+content_block_pair = {
+    re.compile("\\\\xa0"                                         ): r"\\t",
+    re.compile("@[a-zA-Z0-9.]+?@[a-zA-Z0-9]+?\\\\.[a-zA-Z]+\\\\b"): r"[Anony]",
+    re.compile("\\\\n_已指派給[^_]+?_"                           ): r"",
+    re.compile("\\\\n[-_]{10,}\\\\n"                             ): r"\\n",
+    re.compile("\\\\n[-_]{10,}"                                  ): r"",
+    re.compile("\\\\n\\\\t-[^']+?(\\\\n|')"                      ): r"\\n\\t-Anony\1",
+    re.compile("('|\\\\n)[^\\\\:]+?:\\\\n"                       ): r"\1[Anony]:\\t",
+    re.compile("\\\\n_Marked as resolved_\\\\n\\\\t-[Anony]"     ): r"",
+    re.compile("\\\\n_Re-opened_\\\\n\\\\t-[Anony]"              ): r"",
+    re.compile("\\\\n-------------------------$"                 ): r"",
+}
+def regex_block_note(s: str) -> str:
+    if not s: return ""
+    x = s.strip()
+    for k, v in content_block_pair.items():
+        x = k.sub(v, x)
+    return x
+
 def format_locale_record(row: int) -> Tuple[List[str], List[int], bool]:
     sheet_row = main_sheet[row]
     assert isinstance(sheet_row, tuple)
@@ -58,18 +89,30 @@ def format_locale_record(row: int) -> Tuple[List[str], List[int], bool]:
     locate_owned_count = 0
     col_count = len(sheet_row)
     for n, item in enumerate(sheet_row):
-        value = str(item.value).strip() if item.value else ""
-        if value != "":
-            if HEADER_INFO_MARK[n]==1:
-                locate_written_count += 1
+        if item.value:
+            value = str(item.value).strip()
             if '"' in value and "'" in value:
                 value = value.replace('"', "'")
-            if value!="_" and HEADER_INFO_MARK[n]==1:
-                locate_owned_count += 1
-            if HEADER_INFO_MARK[n]!=0: value = str_format_enter_for_12(value)
-            elif HEADER_INFO_MARK[n]==0: value = str_format_enter_for_0(value) 
-            #if "原始" in HEADER_INFO_COL_NAME[n] and len(value)>1: value = "*"+value
-            result[n] = ("'%s'" if "'" not in value else '"%s"') % value
+            # if "需要例句" in value:
+            #     print(value, HEADER_INFO_MARK[n], type(HEADER_INFO_MARK[n]))
+            match HEADER_INFO_MARK[n]:
+                case 1:
+                    value = str_format_enter_for_12(value)
+                    locate_written_count += 1
+                    if value != "_":
+                        locate_owned_count += 1
+                case 2:
+                    value = str_format_enter_for_12(value)
+                case -2:
+                    if "⚠" in value:
+                        valid = False
+                        break
+                    value = str_format_enter_for_m2(value)
+            
+            if "'" not in value:
+                result[n] = "'%s'" % value
+            else:
+                result[n] = '"%s"' % value
         else:
             result[n] = "''"
     if locate_written_count<3 and locate_owned_count<2:
@@ -78,85 +121,31 @@ def format_locale_record(row: int) -> Tuple[List[str], List[int], bool]:
     if not valid:
         return result, [], False
     
-    result[col_count] = '"{' + str({
-        HEADER_INFO_COL_NAME[n] if item.comment else "": 
-        #item.comment.text if item.comment else "" for n,item in enumerate(main_sheet[row])
-        regex_block_info(item.comment.text) if item.comment else "" for n,item in enumerate(sheet_row)
-    })[9:-1].replace("\"", "\\\"") + '}"'
+    comment_filtered = [(n, item.comment.text) for n, item in enumerate(sheet_row) if item.comment]
+    result_note = str({
+        HEADER_INFO_COL_NAME[n]: 
+        regex_block_info(comment) 
+        for n, comment in comment_filtered
+    }).replace("\"", "\\\"")
+    result[col_count] = f'"{regex_block_note(result_note)}"'
     
     col_length = [len(item)-2 for item in result]
     return result, col_length, True
     
-from colorsys import rgb_to_hls, hls_to_rgb
-RGBMAX = 0xff  # Corresponds to 255
-HLSMAX = 240  # MS excel's tint function expects that HLS is base 240.
-def rgb_to_hex(red, green, blue):
-    """Converts (0,1) based RGB values to a hex string 'rrggbb'"""
-    # if green is None:
-    #     red, green, blue = red
-    return ('%02x%02x%02x' % (int(round(red * RGBMAX)), int(round(green * RGBMAX)), int(round(blue * RGBMAX)))).upper()
-def ms_hls_to_rgb(hue, lightness, saturation) -> Tuple[float, float, float]:
-    """Converts HLSMAX based HLS values to rgb values in the range (0,1)"""
-    # if lightness is None:
-    #     hue, lightness, saturation = hue
-    return hls_to_rgb(hue / HLSMAX, lightness / HLSMAX, saturation / HLSMAX)
-def tint_luminance(tint, lum):
-    """Tints a HLSMAX based luminance"""
-    # See: http://ciintelligence.blogspot.co.uk/2012/02/converting-excel-theme-color-and-tint.html
-    if tint < 0:
-        return int(round(lum * (1.0 + tint)))
-    else:
-        return int(round(lum * (1.0 - tint) + (HLSMAX - HLSMAX * (1.0 - tint))))
-def rgb_to_ms_hls(red, green=None, blue=None) -> Tuple[int, int, int]:
-    """Converts rgb values in range (0,1) or a hex string of the form '[#aa]rrggbb' to HLSMAX based HLS, (alpha values are ignored)"""
-    if green is None:
-        if isinstance(red, str):
-            if len(red) > 6:
-                red = red[-6:]  # Ignore preceding '#' and alpha values
-            blue = int(red[4:], 16) / RGBMAX
-            green = int(red[2:4], 16) / RGBMAX
-            red = int(red[0:2], 16) / RGBMAX
-        else:
-            red, green, blue = red
-    assert blue is not None
-    h, l, s = rgb_to_hls(red, green, blue)
-    return (int(round(h * HLSMAX)), int(round(l * HLSMAX)), int(round(s * HLSMAX)))
-def get_theme_colors(wb):
-    """Gets theme colors from the workbook"""
-    # see: https://groups.google.com/forum/#!topic/openpyxl-users/I0k3TfqNLrc
-    from openpyxl.xml.functions import QName, fromstring # type: ignore
-    xlmns = 'http://schemas.openxmlformats.org/drawingml/2006/main'
-    root = fromstring(wb.loaded_theme)
-    themeEl = root.find(QName(xlmns, 'themeElements').text)
-    colorSchemes = themeEl.findall(QName(xlmns, 'clrScheme').text)
-    firstColorScheme = colorSchemes[0]
-    colors = []
-    for c in ['lt1', 'dk1', 'lt2', 'dk2', 'accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6']:
-        accent = firstColorScheme.find(QName(xlmns, c).text)
-        # if 'window' in accent.getchildren()[0].attrib['val']:
-        #     colors.append(accent.getchildren()[0].attrib['lastClr'])
-        # else:
-        #     colors.append(accent.getchildren()[0].attrib['val'])
-        colors.append(accent[0].attrib['val'])
-    return colors
-def theme_and_tint_to_rgb(wb, theme, tint):
-    """Given a workbook, a theme number and a tint return a hex based rgb"""
-    rgb = get_theme_colors(wb)[theme]
-    h, l, s = rgb_to_ms_hls(rgb)
-    return rgb_to_hex(*ms_hls_to_rgb(h, tint_luminance(tint, l), s))
-    
-    
-
+# %%
 print("0___讀取字表___")
 PanCSheet = load_workbook(filename = input_path, data_only=True, keep_vba=False)
+HEADER_ROW_INDEX = 1
+HEADERMARK_ROW_INDEX = 4
+HEADERNAME_ROW_INDEX = 6
 
 main_sheet = PanCSheet["主表-睇真尐註解"]
-for n in range(main_sheet.max_column, 0, -1):
-    if main_sheet.cell(row=5, column=n).value == "x":
+for n in tqdm.trange(main_sheet.max_column, 0, -1):
+    if main_sheet.cell(row=HEADERMARK_ROW_INDEX, column=n).value == "x":
         main_sheet.delete_cols(n)
-headers      = main_sheet[2]
-headers_mark = main_sheet[5]
-headers_name = main_sheet[6]
+headers      = main_sheet[HEADER_ROW_INDEX]
+headers_mark = main_sheet[HEADERMARK_ROW_INDEX]
+headers_name = main_sheet[HEADERNAME_ROW_INDEX]
 assert isinstance(headers, tuple) and isinstance(headers_mark, tuple) and isinstance(headers_name, tuple)
 
 sql_ifaamjyut_header = """CREATE TABLE `IFaamjyut` (
@@ -174,11 +163,14 @@ ALTER TABLE `IFaamjyut` ADD UNIQUE( `id`);
 INSERT INTO `IFaamjyut` (`id`, `col`, `kind`, `fullname`, `fullname_note`, `color`, `note`) VALUES
 """
 
+# %%
 print("1___讀取標籤___")
-for n in range(2, len(headers)):
+for n in range(3, len(headers)):
+    item = headers[n]
     header_name_value = headers_name[n].value
-    header_value = headers[n].value if headers[n].value else ""
-    header_mark_value = int(str(headers_mark[n].value)) if headers_mark[n].value else 0
+    header_value      = item.value if item.value else ""
+    header_mark_value = int(float(str(headers_mark[n].value))) if headers_mark[n].value else 0
+    header_comment    = "" # item.comment.text if item.comment and item.comment.text else ""
     assert header_name_value is None or isinstance(header_name_value, str)
     assert isinstance(header_value, str)
     
@@ -192,35 +184,45 @@ for n in range(2, len(headers)):
         else:
             header_name            = header_value
             locale_name_splited[0] = header_name_value if header_name_value else header_value
+            
+    # if '"' in header_comment:
+    #     header_comment = header_comment.replace('"', "''")
+    
     HEADER_INFO_COL_NAME.append(header_name)
     HEADER_INFO_MARK.append(header_mark_value)
     HEADER_INFO_FULL_NAME.append(locale_name_splited)
+    HEADER_INFO_NOTE.append(header_comment)
     cell_fill = headers[n].fill
     if len(str(cell_fill.fgColor.rgb))==8:
         cell_color = headers[n].fill.fgColor.rgb[2:]
     else:
         cell_theme = cell_fill.start_color.theme
-        cell_tint = cell_fill.start_color.tint
+        cell_tint  = cell_fill.start_color.tint
         cell_color = theme_and_tint_to_rgb(PanCSheet, cell_theme, cell_tint)
     HEADER_INFO_COLOR.append(cell_color)
 HEADER_INFO_COL_COUNT = len(headers) # 附註列
+
+# %%
 print("2___輸出表頭___")
-with open(output_dir+"IFaamjyut"+time_str+".sql", "w", encoding="utf-8") as f:
+output_file_name = f"{output_dir}IFaamjyut_{time_str}.sql"
+with open(output_file_name, "w", encoding="utf-8") as f:
     f.write(sql_ifaamjyut_header)
     for n in range(HEADER_INFO_COL_COUNT):
         sql_row = "%s(%d, '%s', %d, '%s', '%s', '#%s', '%s')" % (
             ",\n" if n>0 else "",
             n+1, HEADER_INFO_COL_NAME[n], HEADER_INFO_MARK[n], HEADER_INFO_FULL_NAME[n][0], 
-            HEADER_INFO_FULL_NAME[n][1], HEADER_INFO_COLOR[n], ""
+            HEADER_INFO_FULL_NAME[n][1], HEADER_INFO_COLOR[n], HEADER_INFO_NOTE[n]
         )
         f.write(sql_row)
     f.write(",\n(%d, '附', 0, '附註', '', '', '');" % (HEADER_INFO_COL_COUNT+1))
-    
+
 sql_row_modal = "(%d, " + ('%s, ' * (HEADER_INFO_COL_COUNT)) + "%s)"
 index = 1
 col_length = np.ones((HEADER_INFO_COL_COUNT+1, ), dtype="int")
-main_sheet_sqls = []
-dict_n2index = {}
+main_sheet_sqls: List[str] = []
+dict_n2index: Dict[int, int] = {}
+# %%
+print("3___解析內容___")
 for n in tqdm.trange(7, main_sheet.max_row+1):
     result = format_locale_record(n)
     if not result[2]:
@@ -231,8 +233,8 @@ for n in tqdm.trange(7, main_sheet.max_row+1):
     main_sheet_sqls.append(sql_row_str)
     dict_n2index[n] = index
     index += 1
-    #if index>10: break
 
+# %%
 sql_jfaamjyut_header = "CREATE TABLE `JFaamjyut` (\n  `id` int(5) NOT NULL"
 for n, i in enumerate(HEADER_INFO_COL_NAME + ["附"]):
     sql_jfaamjyut_header = sql_jfaamjyut_header + \
@@ -241,18 +243,16 @@ for n, i in enumerate(HEADER_INFO_COL_NAME + ["附"]):
 sql_jfaamjyut_header = sql_jfaamjyut_header + ",\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n\n"
 sql_jfaamjyut_insert = "INSERT INTO `JFaamjyut` (`" + "`, `".join(["id"] + HEADER_INFO_COL_NAME + ["附"]) + "`) VALUES\n"
 
-print("3___輸出內容___")
-with open(output_dir+"JFaamjyut_1"+time_str+".sql", "w", encoding="utf-8") as f:
-    f.write(sql_jfaamjyut_header)
-    f.write(sql_jfaamjyut_insert)
-    for n, i in enumerate(main_sheet_sqls[:3000]):
-        if n>0: f.write(",\n")
-        f.write(i)
-    f.write(";")
-if len(main_sheet_sqls)>=3000:
-    with open(output_dir+"JFaamjyut_2"+time_str+".sql", "w", encoding="utf-8") as f:
+print("4___輸出內容___")
+output_file_name = f"{output_dir}JFaamjyut_{time_str}_%d.sql"
+page = 0
+line_per_page = 3000
+while page * line_per_page < len(main_sheet_sqls):
+    with open(output_file_name % (page+1), "w", encoding="utf-8") as f:
+        if page == 0: f.write(sql_jfaamjyut_header)
         f.write(sql_jfaamjyut_insert)
-        for n, i in enumerate(main_sheet_sqls[3000:]):
+        for n, i in enumerate(main_sheet_sqls[page*line_per_page:(page+1)*line_per_page]):
             if n>0: f.write(",\n")
             f.write(i)
         f.write(";")
+    page += 1

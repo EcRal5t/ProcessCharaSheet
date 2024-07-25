@@ -69,6 +69,6 @@
 
 從 google 下載到泛粵表，在上面 python 腳本開頭改 `input_path` 同 `output_dir`，再 `python 佢` 得到三個 .sql 文件
 
-然後按照 `手動屏蔽.yaml` 用 `Ctrl+H` 人工替換掉兩個 `JFaamjyut`
+然後按照 `手動屏蔽.yaml`（有兩個是因爲不記得哪個能刪完） 用 `Ctrl+H` *人工*替換掉兩個 `JFaamjyut`
 
 最後入服務器 jyutdict 庫，刪掉同名即 `IFaamjyut` `JFaamjyut` 兩張表，再 import 上面三個文件

@@ -97,8 +97,8 @@ if __name__ == '__main__':
         logging.info("1____讀取文件____")
         data_raw = pd.ExcelFile(input_path)
         if sheet_name not in data_raw.sheet_names:
-            sheet_name_ = "Sheet1" if "Sheet1" in data_raw.sheet_names else data_raw.sheet_names[0]
-            logging.error(f"表名 [{sheet_name}] 不存在, 將使用表[ {sheet_name_} ]")
+            sheet_name_ = reduce(lambda x, y: x if x in data_raw.sheet_names else y, ["Sheet1", "主表", "字表", data_raw.sheet_names[0]])
+            logging.error(f"表名 [ {sheet_name} ] 不存在, 將使用表[ {sheet_name_} ]")
             sheet_name = sheet_name_
         
         logging.info("2____解析文件____")

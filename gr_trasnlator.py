@@ -160,7 +160,7 @@ jpp2ipa_cod =  { "m":"m", "n":"n", "ng":"ŋ", "gn":"ɲ", "p":"p", "t":"t", "k":"
 
 # 将j++音节划分成声母、元音部分和辅音韵尾
 # eg. split_jpp('jat1') -> (('j', 'a', 't'), '1')
-def split_jpp(syllable: str) -> Tuple[Tuple[str, str, str], str]:
+def split_jpp(syllable: str, norm: bool=False) -> Tuple[Tuple[str, str, str], str]:
     ini = re.search(initial_format, syllable)
     cod = re.search(coda_format, syllable)
     ton = re.search(tone_format, syllable)
@@ -168,8 +168,8 @@ def split_jpp(syllable: str) -> Tuple[Tuple[str, str, str], str]:
     cod = cod[0] if cod!=None else ''
     ton = ton[0] if ton!=None else ''
     vows = syllable[len(ini):-(len(cod)+len(ton))] if cod!='' or ton!='' else syllable[len(ini):]
-    syllable_splited = norm_jpp((ini, vows, cod))
-    return ((ini, vows, cod), ton)
+    syllable_splited = norm_jpp((ini, vows, cod)) if norm else (ini, vows, cod)
+    return (syllable_splited, ton)
 
 # 正則化j++音節
 def norm_jpp(splited: Tuple[str, str, str]) -> Tuple[str, str, str]:
@@ -221,7 +221,7 @@ def pron_translate(*, rules: List[Term], inp: Tuple[str, str, str], to_jpp_or_ip
             if to_jpp_or_ipa:
                 ini_transed = ipa2jpp_ini[inp[0]]
             else:
-                if False and inp[0] not in jpp2ipa_ini and inp[0][-1] == "w" and inp[0][:-1] in jpp2ipa_ini:
+                if inp[0] not in jpp2ipa_ini and inp[0][-1] == "w" and inp[0][:-1] in jpp2ipa_ini:
                     ini_transed = jpp2ipa_ini[inp[0][:-1]] + "ʷ" # ngw -> ŋʷ, sw -> sʷ, fw -> fʷ ...
                 else:
                     ini_transed = jpp2ipa_ini[inp[0]]
