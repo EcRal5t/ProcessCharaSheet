@@ -8,8 +8,8 @@ from functools import reduce
 
 import pandas as pd
 
-from gr_struct import Sheet, get_col_index
-from gr_trasnlator import split_jpp
+from chara_struct import Sheet, get_col_index
+from chara_trasnlator import split_jpp
 
 def retrieve_locale_name(sheet:Sheet, name: str, is_output: bool) -> str:
     charas_prons = sheet.query(name)
@@ -33,14 +33,14 @@ def retrieve_locale_name(sheet:Sheet, name: str, is_output: bool) -> str:
     
     if is_output:
         if not is_op_name_available: 
-            op_name = input("地名不滿足 jgzw 條件，需鍵入導出文件名: ")
+            op_name = input("地名不滿足一鍵轉換條件，需鍵入導出文件名: ")
         while True:
             op_name_ = input(f"回車以確認輸出文件名為 Z{op_name}.sql，否則請輸入導出名: ")
             if op_name_ == "": break
             else: op_name = op_name_
     else:
         if not is_op_name_available: 
-            logging.warning("地名不滿足 jgzw 條件")
+            logging.warning("地名不滿足一鍵轉換條件")
         else:
             logging.info(f"輸出文件名將為 Z{op_name}.sql")
     return "Z" + op_name
@@ -60,8 +60,10 @@ if __name__ == '__main__':
     args_parser.add_argument('-P', '--pron_nd', type=str, help='次音所在列', default="")
     args_parser.add_argument('-m', '--mean', type=str, help='釋義所在列', default="")
     args_parser.add_argument('-I', '--ipa', type=str, help='IPA 所在列', default="")
+    args_parser.add_argument('-RM', '--remove_redundant_mean', action='store_true', help='非多音的字不保留释义')
     args_parser.add_argument('--no-s2t', action='store_true', help='不轉換簡體字')
     args_parser.add_argument('--keep-s2t', action='store_true', help='簡轉繁衝突時簡體保留，否則捨棄')
+    args_parser.add_argument('--cc-mean', action='store_true', help='將釋義轉爲繁體')
     args_parser.add_argument('--debug', action='store_true', help='顯示詳細資訊')
     args_config = args_parser.parse_args()
     if not args_config.ipa and not args_config.pron:
@@ -78,7 +80,7 @@ if __name__ == '__main__':
         exit(1)
     
     locale_name :str = args_config.locale_name if args_config.locale_name else os.path.basename(input_path).split(" ")[0]
-    append_rule:List[str|int] = [0, 1]
+    append_rule:List[str|int] = [0, 1, "w", "kw"]
     sheet_name  :str|int = args_config.sheet_name#"Sheet1"
     
     col_char_idx     =  get_col_index(args_config.char)
@@ -88,8 +90,11 @@ if __name__ == '__main__':
     col_ipa_idxs     = [get_col_index(col) for col in args_config.ipa]
     logging.debug(f"{col_char_idx=}, {col_pron_idxs=}, {col_pron_nd_idxs=}, {col_mean_idxs=}, {col_ipa_idxs=}")
     
-    no_sim_to_trad = args_config.no_s2t
-    keep_sim_to_trad = args_config.keep_s2t
+    no_sim_to_trad: bool = args_config.no_s2t
+    keep_sim_to_trad: bool = args_config.keep_s2t
+    cc_mean: bool = args_config.cc_mean
+    remove_redundant_mean: bool = args_config.remove_redundant_mean
+    logging.info(f"{no_sim_to_trad=}, {keep_sim_to_trad=}, {cc_mean=}, {remove_redundant_mean=}")
     
     is_exporting_sql = not args_config.no_output
     
@@ -97,7 +102,7 @@ if __name__ == '__main__':
         logging.info("1____讀取文件____")
         data_raw = pd.ExcelFile(input_path)
         if sheet_name not in data_raw.sheet_names:
-            sheet_name_ = reduce(lambda x, y: x if x in data_raw.sheet_names else y, ["Sheet1", "主表", "字表", data_raw.sheet_names[0]])
+            sheet_name_ = str(reduce(lambda x, y: x if x in data_raw.sheet_names else y, ["Sheet1", "主表", "字表", data_raw.sheet_names[0]]))
             logging.error(f"表名 [ {sheet_name} ] 不存在, 將使用表[ {sheet_name_} ]")
             sheet_name = sheet_name_
         
@@ -111,7 +116,7 @@ if __name__ == '__main__':
                 col_mean_idxs,
                 col_ipa_idxs,
                 col_pron_nd_idxs,
-                no_sim_to_trad, keep_sim_to_trad)
+                no_sim_to_trad, keep_sim_to_trad, cc_mean, remove_redundant_mean)
         
         logging.info("4____轉換地名____")
         output_name = retrieve_locale_name(sheet, locale_name, is_exporting_sql)

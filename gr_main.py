@@ -5,11 +5,11 @@ import time
 import logging
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s | %(funcName)s: %(levelname)s] %(message)s')
 
-import gradio as gr
+import gradio as gr # type: ignore
 import openpyxl
 import pandas as pd
 
-from gr_struct import *
+from chara_struct import *
 
 SHEETS: List[Sheet] = []
 SHEET_IDX: int = 0
@@ -21,7 +21,7 @@ def parse_sheet(df: pd.DataFrame,
                 mean_col_idxs: List[int],
                 ipa_col_idxs : List[int],
                 pron_nd_col_idxs: List[int],
-                no_sim_to_trad: bool, keep_sim_to_trad: bool
+                no_sim_to_trad: bool, keep_sim_to_trad: bool, cc_mean: bool = False, remove_redundant_mean: bool = False
                 ) -> str:
     global SHEETS, SHEET_IDX
     s = Sheet(df, locate, append_rule, 
@@ -30,7 +30,7 @@ def parse_sheet(df: pd.DataFrame,
             mean_col_idxs,
             ipa_col_idxs,
             pron_nd_col_idxs,
-            no_sim_to_trad, keep_sim_to_trad)
+            no_sim_to_trad, keep_sim_to_trad, cc_mean, remove_redundant_mean)
     if len(SHEETS) <= SHEET_IDX:
         SHEETS.append(s)
         SHEET_IDX = len(SHEETS)-1
