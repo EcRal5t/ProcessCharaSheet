@@ -62,6 +62,7 @@ if __name__ == '__main__':
     args_parser.add_argument('-I', '--ipa', type=str, help='IPA 所在列', default="")
     args_parser.add_argument('-RM', '--remove_redundant_mean', action='store_true', help='非多音的字不保留释义')
     args_parser.add_argument('--no-s2t', action='store_true', help='不轉換簡體字')
+    args_parser.add_argument('--sort-pron', default=False, action='store_true', help='輸出中字的讀音按字母序排序')
     args_parser.add_argument('--keep-s2t', action='store_true', help='簡轉繁衝突時簡體保留，否則捨棄')
     args_parser.add_argument('--cc-mean', action='store_true', help='將釋義轉爲繁體')
     args_parser.add_argument('--debug', action='store_true', help='顯示詳細資訊')
@@ -90,11 +91,12 @@ if __name__ == '__main__':
     col_ipa_idxs     = [get_col_index(col) for col in args_config.ipa]
     logging.debug(f"{col_char_idx=}, {col_pron_idxs=}, {col_pron_nd_idxs=}, {col_mean_idxs=}, {col_ipa_idxs=}")
     
-    no_sim_to_trad: bool = args_config.no_s2t
-    keep_sim_to_trad: bool = args_config.keep_s2t
-    cc_mean: bool = args_config.cc_mean
-    remove_redundant_mean: bool = args_config.remove_redundant_mean
-    logging.info(f"{no_sim_to_trad=}, {keep_sim_to_trad=}, {cc_mean=}, {remove_redundant_mean=}")
+    opt_s2t_off: bool = args_config.no_s2t
+    opt_s2t_keep_collide: bool = args_config.keep_s2t
+    opt_s2t_meanings: bool = args_config.cc_mean
+    opt_remove_redundant_mean: bool = args_config.remove_redundant_mean
+    opt_sort_prons: bool = args_config.sort_prons
+    logging.info(f"{opt_s2t_off=}, {opt_s2t_keep_collide=}, {opt_s2t_meanings=}, {opt_remove_redundant_mean=}")
     
     is_exporting_sql = not args_config.no_output
     
@@ -116,14 +118,14 @@ if __name__ == '__main__':
                 col_mean_idxs,
                 col_ipa_idxs,
                 col_pron_nd_idxs,
-                no_sim_to_trad, keep_sim_to_trad, cc_mean, remove_redundant_mean)
+                opt_s2t_off, opt_s2t_keep_collide, opt_s2t_meanings, opt_remove_redundant_mean)
         
         logging.info("4____轉換地名____")
         output_name = retrieve_locale_name(sheet, locale_name, is_exporting_sql)
         
         if is_exporting_sql:
             logging.info("5____輸出文件____")
-            count_row, count_chara, sql_content = sheet.output_sql_full(output_name)
+            count_row, count_chara, sql_content = sheet.output_sql_full(output_name, opt_sort_prons)
             logging.info(f"有效 {count_row} 音, {count_chara} 字")
             with open(os.path.join(output_dir, f"{output_name}.sql"), 'w', encoding='utf-8') as f:
                 f.write(sql_content)
