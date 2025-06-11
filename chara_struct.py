@@ -1,5 +1,7 @@
 # encoding: utf-8
 # python3
+# filename: chara_struct.py
+
 import logging
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s | %(funcName)s: %(levelname)s] %(message)s')
 from typing import Optional, Any, List, Tuple, Dict, Callable, Union, Set
@@ -289,10 +291,11 @@ class Sheet:
     @staticmethod
     def __parse_chara(rowidx:int, chara: str) -> str:
         """解析字頭，如果一個單元格有多個字，則發出警告並取第一個。"""
-        if len(chara)>1:
+        chara_stripped = chara.strip()
+        if len(chara_stripped)>1:
             logging.warning(f"{rowidx} 似乎含有多個字: {chara}")
-            return chara.strip()[0]
-        return chara.strip()
+            return chara_stripped[0]
+        return chara_stripped
     
     @staticmethod
     def __parse_meaning(meaning_: List[str], delimiter: str = "｜") -> str:

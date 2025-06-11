@@ -1,3 +1,5 @@
+# filename: chara_translator.py
+
 import os
 import re
 import csv
@@ -227,9 +229,9 @@ pron_format    = '^[a-z]{1,10}\\d{0,2}$'
 # 声母正则：匹配所有可能的粤拼声母
 initial_format = '^(mb?|n[jrd]?|ngg?|[bdg]{1,2}|g[hn]?|r[bdgzscrh]|[zcs][hrjl]?|[ptkvw]h?|[hqfjlrx0])([jwv]?)(?=[aeoiuymn])'
 # 韵尾正则：在元音后匹配可能的韵尾
-coda_format    = "(?<=[aoreiwuy])(n[ng]?|[mptkh])(?=[0-9][0-9']?$)?"
+coda_format    = "(?<=[aoreiwuy])(n[ng]?|[mptkh])(?=[\\d`*]|$)"
 # 声调正则：匹配结尾的数字声调
-tone_format    = "[0-9]?[0-9*][0-9']?$"
+tone_format    = "[0-9]?[0-9*][0-9']?(`\\d+)?$"
 # 韵母/元音正则：匹配核心元音部分
 vowel_format   = '(^ng?$|^m$|i[rwi]?|u[rwu]?|[aeo][aeowr]?|yu$|y)$'
 
@@ -245,10 +247,12 @@ jpp2ipa_ini = { "":"",
 "ph":"ɸ", "f":"f", "v":"v", "th":"θ", "h":"h", "w":"w", "j":"j", "sl":"ɬ", 
 "zl":"tɬ", "cl":"tɬʰ", "l":"l", 
 "gw":"kʷ", "kw":"kʷʰ", "hw":"hʷ",
-"gv":"kᵛ", "kv":"kᵛʰ", "hv":"hᵛ"}
+"gv":"kᵛ", "kv":"kᵛʰ", "hv":"hᵛ",
+"rh":"ɦ",
+}
 # 韵母 j++ -> IPA
-jpp2ipa_vow = { # ii默认应该是/ɿ/  # 二選ɨ
-    "i":"i", "yu":"y", "y":"y", "ur":"ɯ", "u":"u", "ee":"e", "eo":"ɵ", "oo":"o", "ea":"ə", "e":"ɛ", "oe":"œ", "o":"ɔ", "ae":"æ", "a":"ɐ", "aa":"a", "oa":"ɒ", "z":"z", "ii":"ɿ", "ew":"ø", "m":"m̩", "n":"n̩", "ng":"ŋ̍",}
+jpp2ipa_vow = {
+    "i":"i", "yu":"y", "y":"y", "ur":"ɯ", "u":"u", "ee":"e", "eo":"ɵ", "oo":"o", "ea":"ə", "e":"ɛ", "oe":"œ", "o":"ɔ", "ae":"æ", "a":"ɐ", "aa":"a", "oa":"ɒ", "z":"z", "ir":"ɿ", "ew":"ø", "m":"m̩", "n":"n̩", "ng":"ŋ̍"}
 # 韵尾 j++ -> IPA (带标记)
 jpp2ipa_cod_mark = { "m":"m̚", "n":"n̚", "ng":"ŋ̚", "p":"p̚", "t":"t̚", "k":"k̚", "h":"ʔ", "nn":"̃", "":""}
 # 韵尾 j++ -> IPA (不带标记)
@@ -432,7 +436,7 @@ ipa2jpp_cod.update({ v:k for k,v in jpp2ipa_cod_mark.items() })
 
 # --- IPA 音节结构的正则表达式 ---
 ipa_tone_format = '(\\d*)$'
-ipa_vows_format = '([iyɯueɵoəɛøœɔæɐaɒɿɪʊᵃ]+|ŋ̩|n̩|m̩|ŋ̍)'
+ipa_vows_format = '([iyɯueɵoɤəɛøœɔæɐaɒɿɪʊᵃ]+|ŋ̩|n̩|m̩|ŋ̍)'
 ipa_coda_format = '([(mnŋptk)̚?]?|ʔ?)$'
 
 # 将 IPA 音节划分成辅音声母、元音和辅音韵尾

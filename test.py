@@ -3,8 +3,8 @@ import sys
 import argparse
 from typing import Optional, Set, List, Tuple, Union, Dict
 
-from gr_trasnlator import RULE, split_jpp
-from gr_struct import Sheet, Chara
+from chara_trasnlator import RULE, split_jpp
+from chara_struct import Sheet, Chara
 
 
 if __name__ == '__main__':

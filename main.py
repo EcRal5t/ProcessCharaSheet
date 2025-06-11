@@ -1,5 +1,6 @@
 # encoding: utf-8
 # python3
+# filename: main.py
 import os
 import logging
 import argparse
@@ -81,7 +82,7 @@ if __name__ == '__main__':
         exit(1)
     
     locale_name :str = args_config.locale_name if args_config.locale_name else os.path.basename(input_path).split(" ")[0]
-    append_rule:List[str|int] = [0, 1, "w", "kw"]
+    append_rule:List[str|int] = [0, 1]
     sheet_name  :str|int = args_config.sheet_name#"Sheet1"
     
     col_char_idx     =  get_col_index(args_config.char)
@@ -95,7 +96,7 @@ if __name__ == '__main__':
     opt_s2t_keep_collide: bool = args_config.keep_s2t
     opt_s2t_meanings: bool = args_config.cc_mean
     opt_remove_redundant_mean: bool = args_config.remove_redundant_mean
-    opt_sort_prons: bool = args_config.sort_prons
+    opt_sort_prons: bool = args_config.sort_pron
     logging.info(f"{opt_s2t_off=}, {opt_s2t_keep_collide=}, {opt_s2t_meanings=}, {opt_remove_redundant_mean=}")
     
     is_exporting_sql = not args_config.no_output

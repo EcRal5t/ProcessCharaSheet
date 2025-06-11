@@ -15,9 +15,9 @@
 蒼梧石橋,ch,*,*,c,*,*
 蒼梧石橋,sh,*,*,s,*,*
 0,0,*,*,,*,*
-0,j|nj|sj|cj|zj,ia,*,*,a,*
-0,j|nj|sj|cj|zj,ie,*,*,e,*
-0,j|nj|sj|cj|zj,io,*,*,o,*
-0,w|kw|gw,ua,*,*,a,*
-0,w|kw|gw,ue,*,*,e,*
-0,w|kw|gw,uo,*,*,o,*
+999,j|nj|sj|cj|zj,ia,*,*,a,*
+999,j|nj|sj|cj|zj,ie,*,*,e,*
+999,j|nj|sj|cj|zj,io,*,*,o,*
+999,w|kw|gw,ua,*,*,a,*
+999,w|kw|gw,ue,*,*,e,*
+999,w|kw|gw,uo,*,*,o,*
