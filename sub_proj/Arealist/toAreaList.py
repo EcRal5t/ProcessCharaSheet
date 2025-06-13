@@ -74,7 +74,7 @@ def markdown_to_sql(markdown_table: str, table_name: str = "IAreaList") -> str:
         sheetname_val = f"'{sql_escape(row_values[5].strip())}'"
         color_val     = f"'{sql_escape(row_values[6].strip())}'"
 
-        value_tuple_str = f"({id_val}, {long_val}, {lat_val}, {first_val}, {second_val}, {third_val}, {sheetname_val}, {color_val})"
+        value_tuple_str = f"({long_val}, {lat_val}, {first_val}, {second_val}, {third_val}, {sheetname_val}, {color_val})"
         sql_values.append(value_tuple_str)
 
     # 组装完整的 SQL 语句
@@ -93,8 +93,8 @@ def markdown_to_sql(markdown_table: str, table_name: str = "IAreaList") -> str:
 ALTER TABLE `{IAreaList}` ADD PRIMARY KEY(`id`);
 ALTER TABLE `{IAreaList}` CHANGE `id` `id` INT(11) NOT NULL AUTO_INCREMENT;"""
 
-    """TRUNCATE TABLE `{IAreaList}`;
-INSERT INTO `{IAreaList}` (`id`, `longitude`, `latitude`, `first`, `second`, `third`, `sheetname`, `color`) VALUES
+    sql_header = """TRUNCATE TABLE `{IAreaList}`;
+INSERT INTO `{IAreaList}` (`longitude`, `latitude`, `first`, `second`, `third`, `sheetname`, `color`) VALUES
 """.lstrip().replace('{IAreaList}', table_name)
     sql_body = ',\n'.join(sql_values)
     

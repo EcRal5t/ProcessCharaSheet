@@ -241,14 +241,14 @@ class Sheet:
             syllables = Sheet.__parse_row_all_pron(sheet_index+2, chara, 
                             [sheet_row.iloc[i].strip() for i in pron_cols],
                             [sheet_row.iloc[i].strip() for i in pron_nd_cols])
-            logging.debug(f"第 {sheet_index+2} 行: {(chara, syllables, meaning, ipas)}")
+            logging.debug(f"第 {sheet_index+1} 行: {(chara, syllables, meaning, ipas)}")
             
             if len(syllables)==0 and len(ipas)==0: continue # 如果沒有任何讀音信息，則跳過
             
             # 如果是新字頭，創建 Chara 物件；如果是已有字頭，則添加新讀音
             if chara not in chara_index_dict:
                 chara_index_dict[chara] = len(entry_list)
-                entry_list.append(Chara(sheet_index+2, chara, syllables, meaning, ipas))
+                entry_list.append(Chara(sheet_index+1, chara, syllables, meaning, ipas))
             else:
                 entry_list[chara_index_dict[chara]].append(Chara.Pron(syllables, meaning, ipas))
         logging.info(f"讀取 {len(entry_list)} 行")
@@ -445,11 +445,12 @@ class Sheet:
             for prons in multiprons:
                 # 格式化輸出
                 ipas = "=".join(prons.ipas)
-                out_pron = "=".join(prons.prons)
+                pron = "=".join(prons.prons)
+                out_pron = "'" + pron + "'" if "'" not in pron else '"' + pron + '"'
                 out_ipa = "'" + ipas + "'" if "'" not in ipas else '"' + ipas + '"'
                 out_mean = "'" + prons.mean + "'" if "'" not in prons.mean else '"' + prons.mean + '"'
                 
-                result += f"{',' if count_row>0 else ''}\n({count_row+1},'{entry.chara}','{out_pron}','','','',{out_ipa},{out_mean})"
+                result += f"{',' if count_row>0 else ''}\n({count_row+1},'{entry.chara}',{out_pron},'','','',{out_ipa},{out_mean})"
                 count_row += 1
             count_chara += 1
         result += ";"
