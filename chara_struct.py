@@ -9,7 +9,7 @@ from typing import Optional, Any, List, Tuple, Dict, Callable, Union, Set
 import pandas as pd
 import opencc
 
-from chara_trasnlator import ToneDict, Term, Rule, RULE, pron_translate, tone_translate, split_jpp, split_ipa
+from chara_trasnlator import ToneDict, Term, Rule, RULE, pron_translate, tone_translate, split_jpp, split_ipa, norm_jpp
 
 class Chara:
     """
@@ -99,6 +99,7 @@ class Chara:
             for pron_, tone_ in split_prons:
                 pron_ipa = pron_translate(rules=norm_rule, inp=pron_,    to_jpp_or_ipa=None)
                 pron_jpp = pron_translate(rules=pron_rule, inp=pron_ipa, to_jpp_or_ipa=True)
+                pron_jpp = norm_jpp(pron_jpp)
                 checked_tone_mark = "舒聲" if pron_[2] not in ["p", "t", "k", "ʔ"] else "入聲"
                 tone = tone_translate(rules=tone_rule.get(checked_tone_mark, {}), tone_mark=tone_)
                 jpps.append(pron_jpp[0]+pron_jpp[1]+pron_jpp[2]+tone)
@@ -208,7 +209,8 @@ class Sheet:
                 mean_cols: List[int],    # 釋義在 excel 表格中所在（幾）列
                 ipa_cols : List[int],    # 音標在 excel 表格中所在（幾）列
                 pron_nd_cols: List[int], # 另讀；舊格式，已棄用
-                no_sim_to_trad: bool, keep_sim_to_trad: bool, cc_mean: bool, remove_redundant_mean: bool
+                no_sim_to_trad: bool, keep_sim_to_trad: bool, cc_mean: bool, remove_redundant_mean: bool,
+                start_from: Optional[int]
                 ):
         """
         Sheet的建構函數，執行主要的處理流程。
@@ -226,7 +228,7 @@ class Sheet:
         logging.info(f"總共 {len(df)} 行")
         
         # --- 1. 讀取 DataFrame 並解析成 Chara 物件 ---
-        for sheet_index in range(len(df)):
+        for sheet_index in range(start_from or 0, len(df)):
             sheet_row  = df.loc[sheet_index]
             assert isinstance(sheet_row, pd.Series)
             # assert df.loc[sheet_index][use_col_index['pron'][0]] != "0.0", sheet_index

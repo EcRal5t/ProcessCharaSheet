@@ -299,9 +299,9 @@ def norm_jpp(splited: Tuple[str, str, str]) -> Tuple[str, str, str]:
     if splited[0]!="" and len(splited[1])>=2:
         if (splited[1]in["ie"]and splited[2]!="")or splited[1]in["ieu"]:
             vows = splited[1][1:] # iek -> ek, iet -> et, iep -> ep, ieu -> eu
-        if splited[0][-1]=="j"  and (splited[1][0:2]in["ia","ie","io"]):
+        if splited[0][-1]=="j"  and (splited[1][:2]in["ia","ie","io"]or(splited[1]in["io"]and splited[2]!="")):
             vows = splited[1][1:] # jia -> ja, njia -> nja, sjia -> sja
-        if splited[0][-1]=="w"  and (splited[1][0:2]in["ua","ue","uo"]):
+        if splited[0][-1]=="w"  and (splited[1][:2]in["ua","ue","uo"]or(splited[1]in["ui"]and splited[2]!="")):
             vows = splited[1][1:] # wua -> wa, kwua -> kwa
     return (ini, vows, cod)
 
@@ -430,13 +430,14 @@ ipa2jpp_ini.update({"ts":"z", "tsʰ":"c", "tsh":"c"})
 ipa2jpp_ini.update({"ʃ":"sh", "tʃ":"zh", "tʃʰ":"ch", "tʃh":"ch"})
 ipa2jpp_ini.update({"ɕ":"sj", "tɕ":"zj", "tɕʰ":"cj", "tɕh":"cj"})
 ipa2jpp_vow = { v:k for k,v in jpp2ipa_vow.items() }
-ipa2jpp_vow.update({"m":"m", "n":"n", "ŋ":"ng", "ʌ": "a"})
+ipa2jpp_vow.update({"m":"m", "n":"n", "ŋ":"ng"})
+ipa2jpp_vow.update({"ʌ": "a", "ɑ": "aa"})
 ipa2jpp_cod = { v:k for k,v in jpp2ipa_cod.items() }
 ipa2jpp_cod.update({ v:k for k,v in jpp2ipa_cod_mark.items() })
 
 # --- IPA 音节结构的正则表达式 ---
 ipa_tone_format = '(\\d*)$'
-ipa_vows_format = '([iyɯueɵoɤəɛøœɔæɐaɒʌɿɪʊᵃ]+|ŋ̩|n̩|m̩|ŋ̍)'
+ipa_vows_format = '([iyɯueɵoɤəɛøœɔæɐaɑɒʌɿɪʊᵃ]+|ŋ̩|n̩|m̩|ŋ̍)'
 ipa_coda_format = '([(mnŋptk)̚?]?|ʔ?)$'
 
 # 将 IPA 音节划分成辅音声母、元音和辅音韵尾

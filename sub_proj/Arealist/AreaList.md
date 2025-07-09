@@ -33,15 +33,18 @@
 | 113.091   | 22.578   | 四邑片 | 江門     | 墟頂   | ZGongmunHuidiang           | #e59895 |      |
 | 113.8940  | 23.0821  | 莞寶片 | 東莞     | 塘角   | ZDeongeonToongooh          | #DE4B36 |      |
 | 113.9380  | 22.9793  | 莞寶片 | 東莞     | 黃麻嶺 | ZDeanggeangWongmaaloeng    | #cc3d27 |      |
+| 113.749   | 23.038   | 莞寶片 | 東莞     | 莞城   | ZDunggunGunseang           | #e96949 |      |
 | 113.091   | 22.578   | 粵海片 | 江門     | （白） | ZGongmunBakwaa             | #fc992f |      |
 | 113.23    | 23.16    | 粵海片 | 廣州     |        | ZGwongzau                  | #fe8913 |      |
 | 113.27    | 22.8     | 粵海片 | 順德     | 大良   | ZSeondaak                  | #fdb135 |      |
 | 113.39    | 22.53    | 粵海片 | 中山     | 石岐   | ZZungsaanSiaakki           | #f1a752 |      |
+| 113.39    | 22.53    | 粵海片 | 中山     | 小欖   | ZZungsaanSiulaam           | #f3b060 |      |
 | 112.459   | 23.047   | 粵海片 | 肇慶     |        | ZSiuhing                   | #f3cf74 |      |
 | 111.895   | 22.47    | 新勤片 | 陽春     | 松柏   | ZJengcanCungbak            | #af907f |      |
+| 112.22    | 22.696   | 新勤片 | 新興     |        | ZSanhan                    | #cc9f87 |      |
 | 111.31    | 23.48    | 粵海片 | 梧州     |        | ZNgzjau                    | #f5e49b |      |
 | 108.33    | 22.84    | 邕潯片 | 南寧     |        | ZNaamning                  | #e6d097 |      |
-| 109.258   | 22.684   | 邕潯片 | 橫縣     |        | ZWaanghyun                 | #ebc591 |      |
+| 109.258   | 22.684   | 邕潯片 | 橫州     |        | ZWaangzau                  | #ebc591 |      |
 | 106.62    | 23.9     | 邕潯片 | 百色     |        | ZBaaksik                   | #edc187 |      |
 | 110.08    | 23.4     | 邕潯片 | 桂平     |        | ZGwaiping                  | #fef9a3 |      |
 | 111.23    | 23.41    | 粵海片 | 梧州     | 戎墟   | ZJunghyu                   | #daea83 |      |
@@ -58,20 +61,22 @@
 | 109.61    | 23.08    | 勾漏片 | 貴港     | 街裏   | ZGvaigong                  | #65de99 |      |
 | 108.8113  | 22.4304  | 欽廉片 | 靈山     | 太平   | ZLingsaanTaaiping          | #7ccec2 |      |
 | 109.2     | 21.66    | 欽廉片 | 廉州     |        | ZLimzau                    | #77dddf |      |
-| 110.64    | 21.66    | 吳化片 | 化州     | 下江   | ZHaagaang                  | #85d2d2 |      |
-| 110.69    | 21.347   | 吳化片 | 吳川     | 吳陽   | ZNgoucunNgoujaang          | #85c5c7 |      |
 | 110.505   | 21.26    | 吳化片 | 湛江     | 坡頭   | ZCaanggaangPotau           | #94d0cb |      |
+| 110.69    | 21.347   | 吳化片 | 吳川     | 吳陽   | ZNgoucunNgoujaang          | #85c5c7 |      |
+| 110.64    | 21.66    | 吳化片 | 化州     | 下江   | ZHaagaang                  | #85d2d2 |      |
+| 110.58    | 22       | 吳化片 | 化州     | 上江   | ZSenggaang                 | #a2ecf2 |      |
 | 108.61    | 21.96    | 欽廉片 | 欽州     |        | ZHamzau                    | #aaddfa |      |
 | 108.35    | 21.77    | 欽廉片 | 防城     |        | ZFongsing                  | #ADDFFB |      |
 | 109.12    | 21.49    | 欽廉片 | 北海     |        | ZBakhoi                    | #c2dce7 |      |
 | 109.7770  | 21.2712  | 湛茂片 | 遂溪     | 草潭   | ZSluikaiCoutaam            | #B9D4E6 |      |
 | 110.25    | 21.38    | 湛茂片 | 遂溪     | 遂城   | ZSluikai                   | #B7DEED |      |
 | 110.366   | 21.266   | 湛茂片 | 湛江     | 赤坎   | ZZaamgongCiakham           | #c9d0e6 |      |
-| 110.58    | 22       | 湛茂片 | 化州     | 上江   | ZSenggaang                 | #a2ecf2 |      |
 | 110.853   | 21.92    | 湛茂片 | 高州     |        | ZGouzau                    | #9eeff5 |      |
 | 110.773   | 21.822   | 湛茂片 | 高州     | 石鼓   | ZGouzauSikgu               | #a0eff5 |      |
 | 110.93    | 21.65    | 湛茂片 | 茂名     |        | ZMauming                   | #b8ecef |      |
-| 111.87    | 22.3     | 兩陽片 | 陽春     | 合水   | ZJengcanGaapsui            | #b3c4e5 |      |
-| 111.68    | 21.96    | 兩陽片 | 陽春     | 河口   | ZJengcanHohau              | #a2acf3 |      |
+| 111.87    | 22.3     | 兩陽片 | 陽春     | 合水   | ZJengcanGaapsui            | #adbeec |      |
+| 111.68    | 21.96    | 兩陽片 | 陽春     | 河口   | ZJengcanHohau              | #919be9 |      |
+| 111.98    | 21.86    | 兩陽片 | 陽江     |        | ZJenggong                  | #9888f7 |      |
 | 109.4     | 24.3     | 官話   | 柳州     |        | ZLiauzau                   | #7F7F7F |      |
+| 112.87    | 25.162   | 土話   | 宜章     | 一六   | ZNjizaangJeleoi            | #454540 |      |
 | 108.322   | 22.790   | 平話   | 南寧     | 亭子   | ZDingzi                    | #CCD5B1 | 1    |

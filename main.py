@@ -66,6 +66,7 @@ if __name__ == '__main__':
     args_parser.add_argument('--sort-pron', default=False, action='store_true', help='輸出中字的讀音按字母序排序')
     args_parser.add_argument('--keep-s2t', action='store_true', help='簡轉繁衝突時簡體保留，否則捨棄')
     args_parser.add_argument('--cc-mean', action='store_true', help='將釋義轉爲繁體')
+    args_parser.add_argument('--start-from', type=int, help='表格從第幾行開始')
     args_parser.add_argument('--debug', action='store_true', help='顯示詳細資訊')
     args_config = args_parser.parse_args()
     if not args_config.ipa and not args_config.pron:
@@ -92,12 +93,13 @@ if __name__ == '__main__':
     col_ipa_idxs     = [get_col_index(col) for col in args_config.ipa]
     logging.debug(f"{col_char_idx=}, {col_pron_idxs=}, {col_pron_nd_idxs=}, {col_mean_idxs=}, {col_ipa_idxs=}")
     
-    opt_s2t_off: bool = args_config.no_s2t
+    opt_s2t_off:          bool = args_config.no_s2t
     opt_s2t_keep_collide: bool = args_config.keep_s2t
-    opt_s2t_meanings: bool = args_config.cc_mean
+    opt_s2t_meanings:     bool = args_config.cc_mean
     opt_remove_redundant_mean: bool = args_config.remove_redundant_mean
-    opt_sort_prons: bool = args_config.sort_pron
-    logging.info(f"{opt_s2t_off=}, {opt_s2t_keep_collide=}, {opt_s2t_meanings=}, {opt_remove_redundant_mean=}")
+    opt_sort_prons:       bool = args_config.sort_pron
+    opt_start_from:       Optional[int] = args_config.start_from
+    logging.info(f"{opt_s2t_off=}, {opt_s2t_keep_collide=}, {opt_s2t_meanings=}, {opt_remove_redundant_mean=}, {opt_start_from=}")
     
     is_exporting_sql = not args_config.no_output
     
@@ -119,7 +121,7 @@ if __name__ == '__main__':
                 col_mean_idxs,
                 col_ipa_idxs,
                 col_pron_nd_idxs,
-                opt_s2t_off, opt_s2t_keep_collide, opt_s2t_meanings, opt_remove_redundant_mean)
+                opt_s2t_off, opt_s2t_keep_collide, opt_s2t_meanings, opt_remove_redundant_mean, opt_start_from)
         
         logging.info("4____轉換地名____")
         output_name = retrieve_locale_name(sheet, locale_name, is_exporting_sql)
