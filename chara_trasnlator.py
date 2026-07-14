@@ -231,7 +231,7 @@ initial_format = '^(mb?|n[jrd]?|ngg?|[bdg]{1,2}|g[hn]?|r[bdgzscrh]|[zcs][hrjl]?|
 # 韵尾正则：在元音后匹配可能的韵尾
 coda_format    = "(?<=[aoreiwuy])(n[ng]?|[mptkh])(?=[\\d`*]|$)"
 # 声调正则：匹配结尾的数字声调
-tone_format    = "[0-9]?[0-9*][0-9']?(`\\d+)?$"
+tone_format    = "[0-9]?[0-9*][0-9'ABCD]?(`\\d+)?$"
 # 韵母/元音正则：匹配核心元音部分
 vowel_format   = '(^ng?$|^m$|i[rwi]?|u[rwu]?|[aeo][aeowr]?|yu$|y)$'
 
@@ -408,6 +408,9 @@ def get_vows_ipa(vows: str) -> str:
     Returns:
         str: 转换后的IPA元音字符串。
     """
+    if vows in {"ǀ", "ǂ", "ǀʷ", "ǂʷ"}:
+        return vows.replace("ʷ", "w")
+    
     ipa_vow_list = []
     # 从后向前贪心匹配最长的元音单元
     while len(vows) != 0:

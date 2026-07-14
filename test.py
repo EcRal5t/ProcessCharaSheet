@@ -70,6 +70,6 @@ if __name__ == '__main__':
             result: List[List[str]] = []
             for syllable in syllables:
                 syllable_s, syllable_t = split_jpp(syllable)
-                result.append([syllable_s[0], syllable_s[1]+syllable_s[2], syllable_t])
+                result.append([syllable_s[0], syllable_s[1], syllable_s[2], syllable_t])
             result_ = [(i[0] if len(set(i))==1 else "/".join(i)) for i in zip(*result)]
             print(" | ".join(result_), file=outfile)

@@ -7,7 +7,7 @@ logging.basicConfig(level=logging.INFO, format='[%(asctime)s | %(funcName)s: %(l
 from typing import Optional, Any, List, Tuple, Dict, Callable, Union, Set
 
 import pandas as pd
-import opencc
+# import opencc
 
 from chara_trasnlator import ToneDict, Term, Rule, RULE, pron_translate, tone_translate, split_jpp, split_ipa, norm_jpp
 
@@ -38,10 +38,13 @@ class Chara:
         mean: str
         ipas: List[str]
         
+        _splited: List[Tuple[Tuple[str, str, str], str]]
+        
         def __init__(self, prons: List[str], mean: str, ipas: List[str]):
             self.prons = prons
             self.mean  = mean
             self.ipas  = ipas
+            self._splited = []
             
         def __eq__(self, __o: object) -> bool:
             """
@@ -54,6 +57,34 @@ class Chara:
             # 兩個讀音列表互為子集（即完全相同）
             if all([p in __o.prons for p in self.prons]) or all([p in self.prons for p in __o.prons]): return True
             return False
+        
+        def norm(self, jpp_norm_rule: List[Term], ipa_norm_rule: List[Term], mark_rule: ToneDict):
+            """
+            對自身粵拼和音標正則化。
+            
+            Args:
+                jpp_norm_rule (List[Term]): j2j 粵拼到粵拼的正則化規則。
+                ipa_norm_rule (List[Term]): i2i 音標到音標的正則化規則。
+                mark_rule (ToneDict): t_j2j 粵拼聲調的標記規則。
+            """
+            split_jpps = sorted([split_jpp(p) for p in self.prons], key=lambda x:x[0][1]+x[0][2])
+            split_ipas = sorted([split_ipa(p) for p in self.ipas], key=lambda x:x[0][1]+x[0][2])
+
+            jpps: List[str] = []
+            ipas: List[str] = []
+            self._splited.clear()
+            for pron_, tone_ in split_jpps:
+                pron_jpp = pron_translate(rules=jpp_norm_rule, inp=pron_, to_jpp_or_ipa=None)
+                pron_jpp = norm_jpp(pron_jpp)
+                checked_tone_mark = "舒聲" if pron_[2] not in ["p", "t", "k", "ʔ"] else "入聲"
+                tone_jpp = tone_translate(rules=mark_rule.get(checked_tone_mark, {}), tone_mark=tone_, skippable=True)
+                jpps.append(pron_jpp[0]+pron_jpp[1]+pron_jpp[2]+tone_jpp)
+                self._splited.append((pron_jpp, tone_jpp))
+            for pron_, tone_ in split_ipas:
+                pron_ipa = pron_translate(rules=ipa_norm_rule, inp=pron_, to_jpp_or_ipa=None)
+                ipas.append(pron_ipa[0]+pron_ipa[1]+pron_ipa[2]+tone_)
+            self.prons = jpps
+            self.ipas = ipas
         
         def norm_and_to_ipa(self, norm_rule: List[Term], pron_rule: List[Term], mark_rule: ToneDict, tone_rule: ToneDict):
             """
@@ -69,6 +100,7 @@ class Chara:
             split_prons = sorted([split_jpp(p) for p in self.prons], key=lambda x:x[0][1]+x[0][2])
             jpps: List[str] = []
             ipas: List[str] = []
+            self._splited.clear()
             for pron_, tone_ in split_prons:
                 # 應用 j2j 規則對粵拼進行正則化
                 pron_jpp = pron_translate(rules=norm_rule, inp=pron_,    to_jpp_or_ipa=None)
@@ -81,6 +113,7 @@ class Chara:
                 
                 jpps.append(pron_jpp[0]+pron_jpp[1]+pron_jpp[2]+tone_jpp)
                 ipas.append(pron_ipa[0]+pron_ipa[1]+pron_ipa[2]+tone_ipa)
+                self._splited.append((pron_jpp, tone_jpp))
             self.prons = jpps
             self.ipas = ipas
             
@@ -96,6 +129,7 @@ class Chara:
             split_prons = sorted([split_ipa(p) for p in self.ipas], key=lambda x:x[0][1]+x[0][2])
             jpps: List[str] = []
             ipas: List[str] = []
+            self._splited.clear()
             for pron_, tone_ in split_prons:
                 pron_ipa = pron_translate(rules=norm_rule, inp=pron_,    to_jpp_or_ipa=None)
                 pron_jpp = pron_translate(rules=pron_rule, inp=pron_ipa, to_jpp_or_ipa=True)
@@ -104,12 +138,21 @@ class Chara:
                 tone = tone_translate(rules=tone_rule.get(checked_tone_mark, {}), tone_mark=tone_)
                 jpps.append(pron_jpp[0]+pron_jpp[1]+pron_jpp[2]+tone)
                 ipas.append(pron_ipa[0]+pron_ipa[1]+pron_ipa[2]+tone_)
+                self._splited.append((pron_jpp, tone))
             self.prons = jpps
             self.ipas = ipas
             
         def __str__(self) -> str:
             """返回一個字符串表示，格式如：['jyut6']<釋義>/jyt6/"""
             return (f"{self.prons}<{self.mean}>" if self.mean!="" else f"{self.prons}") + (f"/{'.'.join(self.ipas)}/" if self.ipas else "")
+        
+        def get_splited_prons(self) -> List[Tuple[Tuple[str, str, str], str]]:
+            if self._splited:
+                return self._splited
+            elif not self.prons:
+                return []
+            else:
+                return sorted([split_jpp(p) for p in self.prons], key=lambda x:x[0][1]+x[0][2])
         
     multiprons: List[Pron]
     def __init__(self, index: int, chara: str, prons: List[str], mean: str, ipas: List[str]):
@@ -282,6 +325,12 @@ class Sheet:
         # 如果原先沒有粵拼，生成後再進行一次去重
         if not is_set_jpp:
             for entry in entry_list: entry.rm_duplicate()
+            
+        # 如果原先有 IPA 也有 J++，那麽只規則化一次
+        if is_set_ipa and is_set_jpp:
+            for i in self.entry_list:
+                for prons in i.multiprons:
+                    prons.norm(self.rule.j2j, self.rule.i2i, self.rule.tone_j2j)
         
         # --- 4. 簡繁轉換和其他清理 ---
         if not no_sim_to_trad:
@@ -347,7 +396,6 @@ class Sheet:
         self.rule, msg = RULE.select(locale, append)
         return msg
     
-    s2t_converter: opencc.OpenCC
     s2t_keeped_char: Set[str]
     def __sim_2_trad(self, keep_chara_s2t: bool, cc_mean: bool) -> None:
         """
@@ -355,7 +403,8 @@ class Sheet:
         使用 opencc 工具，並維護一個不進行轉換的例外列表 (s2t_keeped_char)，
         以處理“一簡對多繁”或在簡繁中均常用但意義不同的字。
         """
-        self.s2t_converter = opencc.OpenCC('s2t.json')
+        import opencc
+        s2t_converter: opencc.OpenCC = opencc.OpenCC('s2t.json')
         self.s2t_keeped_char = {
             "干","后","系","历","板","表","丑","范","丰","刮","胡","回",
             "伙","姜","借","克","困","里","帘","面","蔑","千","秋","松",
@@ -371,7 +420,7 @@ class Sheet:
         }
         for entry in self.entry_list:
             chara = entry.chara
-            chara_t = self.s2t_converter.convert(chara)
+            chara_t = s2t_converter.convert(chara)
             # 如果是例外字，不轉換
             if (chara_t!=chara) and chara in self.s2t_keeped_char:
                 logging.debug(f"{entry.index} 簡轉繁未應用 {chara} -> {chara_t}")
@@ -398,7 +447,7 @@ class Sheet:
         if cc_mean:
             for entry in self.entry_list:
                 for multipron in entry.multiprons:
-                    multipron.mean = self.s2t_converter.convert(multipron.mean)
+                    multipron.mean = s2t_converter.convert(multipron.mean)
         
     
     def query(self, charas: str) -> List[List[Chara.Pron]]:
@@ -438,22 +487,40 @@ class Sheet:
         Returns:
             Tuple[int, int, str]: (總行數, 總字數, SQL語句字符串)。
         """
+        
+        def escape_quote(string: str) -> str:
+            if not string: return '""'
+            return "'" + string + "'" if "'" not in string else '"' + string + '"'
+        
         count_row, count_chara = 0, 0
         result = ""
         result += output_sql_header(output_name) # 添加 CREATE TABLE 頭部
         for entry in self.entry_list:
             if entry.status == -1: continue # 跳過碰撞的字
             multiprons = entry.multiprons if not sort_pron else sorted(entry.multiprons, key=lambda x:x.prons[0])
+            alt_idx = 1
             for prons in multiprons:
+                jpps = prons.get_splited_prons()
+                ipas = prons.ipas
+                if len(ipas) > len(jpps):
+                    jpps.extend([(("","",""),"")] * (len(ipas)-len(jpps)))
+                elif len(ipas) < len(jpps):
+                    ipas.extend([""] * (len(jpps)-len(ipas)))
                 # 格式化輸出
-                ipas = "=".join(prons.ipas)
-                pron = "=".join(prons.prons)
-                out_pron = "'" + pron + "'" if "'" not in pron else '"' + pron + '"'
-                out_ipa = "'" + ipas + "'" if "'" not in ipas else '"' + ipas + '"'
-                out_mean = "'" + prons.mean + "'" if "'" not in prons.mean else '"' + prons.mean + '"'
-                
-                result += f"{',' if count_row>0 else ''}\n({count_row+1},'{entry.chara}',{out_pron},'','','',{out_ipa},{out_mean})"
-                count_row += 1
+                for idx in range(len(ipas)):
+                    ipa, jpp = ipas[idx], jpps[idx]
+                    out_alt = "NULL" if len(ipas)==1 else alt_idx
+                    if count_row >0: result += ","
+                    result += "\n("
+                    result += f"{count_row+1}," \
+                        f"'{entry.chara}'," \
+                        f"{escape_quote(jpp[0][0])}," \
+                        f"{escape_quote(jpp[0][1])}," \
+                        f"{escape_quote(jpp[0][2])}," \
+                        f"{escape_quote(jpp[1])}," \
+                        f"{escape_quote(ipa)},{escape_quote(prons.mean)},{out_alt})"
+                    count_row += 1
+                alt_idx += 1
             count_chara += 1
         result += ";"
         return (count_row, count_chara, result)
@@ -483,8 +550,9 @@ def output_sql_header(output_name):
   `tone` tinytext CHARACTER SET armscii8 COLLATE armscii8_bin NOT NULL,
   `ipa` tinytext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `note` text CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `alt_group` tinyint,
   PRIMARY KEY(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 TRUNCATE TABLE `%s`;
 
-INSERT INTO `%s` (`id`, `chara`, `initial`, `nuclei`, `coda`, `tone`, `ipa`, `note`) VALUES""".replace("%s", output_name)
+INSERT INTO `%s` (`id`, `chara`, `initial`, `nuclei`, `coda`, `tone`, `ipa`, `note`, `alt_group`) VALUES""".replace("%s", output_name)

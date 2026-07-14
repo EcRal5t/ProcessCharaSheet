@@ -12,6 +12,10 @@ import pandas as pd
 from chara_struct import Sheet, get_col_index
 from chara_trasnlator import split_jpp
 
+from openpyxl.styles.fills import Fill
+old_init = Fill.__init__
+Fill.__init__ = lambda self, *args, **kw: old_init(self)
+
 def retrieve_locale_name(sheet:Sheet, name: str, is_output: bool) -> str:
     charas_prons = sheet.query(name)
     charas_prons_flatten_= [[c_p.prons for c_p in c_ps] for c_ps in charas_prons]
@@ -28,7 +32,7 @@ def retrieve_locale_name(sheet:Sheet, name: str, is_output: bool) -> str:
             logging.warning(f"{name[n]} 有多音: {' | '.join([str(i) for i in charas_prons[n]])}")
         else:
             pron = chara_prons.pop()
-            op_name += pron.capitalize() if (n==0 or n==2) else pron
+            op_name += "_"+pron if (n==2) else pron
             logging.info(f"{name[n]}: {pron}")
     op_name = op_name if is_op_name_available else ""
     
@@ -36,15 +40,15 @@ def retrieve_locale_name(sheet:Sheet, name: str, is_output: bool) -> str:
         if not is_op_name_available: 
             op_name = input("地名不滿足一鍵轉換條件，需鍵入導出文件名: ")
         while True:
-            op_name_ = input(f"回車以確認輸出文件名為 Z{op_name}.sql，否則請輸入導出名: ")
+            op_name_ = input(f"回車以確認輸出文件名為 z_{op_name}.sql，否則請輸入導出名: ")
             if op_name_ == "": break
             else: op_name = op_name_
     else:
         if not is_op_name_available: 
             logging.warning("地名不滿足一鍵轉換條件")
         else:
-            logging.info(f"輸出文件名將為 Z{op_name}.sql")
-    return "Z" + op_name
+            logging.info(f"輸出文件名將為 z_{op_name}.sql")
+    return "z_" + op_name
 
 
 if __name__ == '__main__':
