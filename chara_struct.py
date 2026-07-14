@@ -523,6 +523,7 @@ class Sheet:
                 alt_idx += 1
             count_chara += 1
         result += ";"
+        result += output_sql_footer(output_name)
         return (count_row, count_chara, result)
 
 def get_col_index(colname: str) -> int:
@@ -551,8 +552,15 @@ def output_sql_header(output_name):
   `ipa` tinytext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `note` text CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `alt_group` tinyint,
-  PRIMARY KEY(`id`)
+  PRIMARY KEY(`id`),
+  KEY `idx_chara_lookup` (`chara`(2)),
+  KEY `idx_pron_lookup` (`initial`(5), `nuclei`(5), `coda`(5))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 TRUNCATE TABLE `%s`;
 
 INSERT INTO `%s` (`id`, `chara`, `initial`, `nuclei`, `coda`, `tone`, `ipa`, `note`, `alt_group`) VALUES""".replace("%s", output_name)
+
+
+def output_sql_footer(output_name: str) -> str:
+    """刷新批量导入后的索引统计信息。"""
+    return f"\nANALYZE TABLE `{output_name}`;"

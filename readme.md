@@ -8,6 +8,8 @@
 
 `python main.py -i 字表路径 -l 地名 -n 表名 -c 字頭列 -p 粵拼列 -P 粵拼次音列 -I 音標列 -m 釋義列`
 
+自動化或批處理時可加 `-y`，自動確認由地名讀音推導出的輸出文件名。
+
 只有 `-i` 同 `-c` 必填，`-p`、`-I` 任一必填，`-l`、`-n` 依情況可省
 
 `-n` 默認 `主表` 即調搽表樣式
@@ -35,6 +37,15 @@
 *列號超過 Z 的，自行解決*
 
 導出得一個 .sql 文件，然後登入服務器數據庫，在 jyutdict 庫內 import 便是
+
+生成的地點表會自帶兩個網站查詢索引：`chara` 查字索引，以及
+`initial + nuclei + coda` 查音索引；導入完成後會自動執行
+`ANALYZE TABLE` 更新統計信息。`TRUNCATE TABLE` 不會刪除已有索引。
+
+如果目標數據庫中的同名表是由舊版腳本建立，`CREATE TABLE IF NOT EXISTS`
+不會補建新索引；需先在網站倉庫執行一次：
+
+`php api/scripts/lookup_indexes.php --apply`
 
 ### 配置音系 jgzw 數據
 

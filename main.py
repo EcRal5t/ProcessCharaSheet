@@ -16,7 +16,7 @@ from openpyxl.styles.fills import Fill
 old_init = Fill.__init__
 Fill.__init__ = lambda self, *args, **kw: old_init(self)
 
-def retrieve_locale_name(sheet:Sheet, name: str, is_output: bool) -> str:
+def retrieve_locale_name(sheet:Sheet, name: str, is_output: bool, confirm_output: bool = True) -> str:
     charas_prons = sheet.query(name)
     charas_prons_flatten_= [[c_p.prons for c_p in c_ps] for c_ps in charas_prons]
     charas_prons_flatten = [[p for c_p in c_ps for p in c_p] for c_ps in charas_prons_flatten_]
@@ -39,10 +39,13 @@ def retrieve_locale_name(sheet:Sheet, name: str, is_output: bool) -> str:
     if is_output:
         if not is_op_name_available: 
             op_name = input("地名不滿足一鍵轉換條件，需鍵入導出文件名: ")
-        while True:
-            op_name_ = input(f"回車以確認輸出文件名為 z_{op_name}.sql，否則請輸入導出名: ")
-            if op_name_ == "": break
-            else: op_name = op_name_
+        if confirm_output:
+            while True:
+                op_name_ = input(f"回車以確認輸出文件名為 z_{op_name}.sql，否則請輸入導出名: ")
+                if op_name_ == "": break
+                else: op_name = op_name_
+        else:
+            logging.info(f"已自動確認輸出文件名為 z_{op_name}.sql")
     else:
         if not is_op_name_available: 
             logging.warning("地名不滿足一鍵轉換條件")
@@ -72,6 +75,7 @@ if __name__ == '__main__':
     args_parser.add_argument('--cc-mean', action='store_true', help='將釋義轉爲繁體')
     args_parser.add_argument('--start-from', type=int, help='表格從第幾行開始')
     args_parser.add_argument('--debug', action='store_true', help='顯示詳細資訊')
+    args_parser.add_argument('-y', '--yes', action='store_true', help='自動確認可推導的輸出文件名')
     args_config = args_parser.parse_args()
     if not args_config.ipa and not args_config.pron:
         args_parser.error("j++ 和 ipa 至少存在一列")
@@ -128,7 +132,7 @@ if __name__ == '__main__':
                 opt_s2t_off, opt_s2t_keep_collide, opt_s2t_meanings, opt_remove_redundant_mean, opt_start_from)
         
         logging.info("4____轉換地名____")
-        output_name = retrieve_locale_name(sheet, locale_name, is_exporting_sql)
+        output_name = retrieve_locale_name(sheet, locale_name, is_exporting_sql, not args_config.yes)
         
         if is_exporting_sql:
             logging.info("5____輸出文件____")
@@ -136,9 +140,8 @@ if __name__ == '__main__':
             logging.info(f"有效 {count_row} 音, {count_chara} 字")
             with open(os.path.join(output_dir, f"{output_name}.sql"), 'w', encoding='utf-8') as f:
                 f.write(sql_content)
-            
+
         logging.info("6____完成____")
     except KeyboardInterrupt as e:
         print()
         logging.error("用戶中斷")
-    
