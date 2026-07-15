@@ -76,6 +76,7 @@ if __name__ == '__main__':
     args_parser.add_argument('--start-from', type=int, help='表格從第幾行開始')
     args_parser.add_argument('--debug', action='store_true', help='顯示詳細資訊')
     args_parser.add_argument('-y', '--yes', action='store_true', help='自動確認可推導的輸出文件名')
+    args_parser.add_argument('--sep', type=str, help='又音分割符', default="/")
     args_config = args_parser.parse_args()
     if not args_config.ipa and not args_config.pron:
         args_parser.error("j++ 和 ipa 至少存在一列")
@@ -107,6 +108,7 @@ if __name__ == '__main__':
     opt_remove_redundant_mean: bool = args_config.remove_redundant_mean
     opt_sort_prons:       bool = args_config.sort_pron
     opt_start_from:       Optional[int] = args_config.start_from
+    opt_sep_sign:         str = args_config.sep
     logging.info(f"{opt_s2t_off=}, {opt_s2t_keep_collide=}, {opt_s2t_meanings=}, {opt_remove_redundant_mean=}, {opt_start_from=}")
     
     is_exporting_sql = not args_config.no_output
@@ -129,14 +131,18 @@ if __name__ == '__main__':
                 col_mean_idxs,
                 col_ipa_idxs,
                 col_pron_nd_idxs,
-                opt_s2t_off, opt_s2t_keep_collide, opt_s2t_meanings, opt_remove_redundant_mean, opt_start_from)
+                opt_s2t_off, opt_s2t_keep_collide, opt_s2t_meanings, opt_remove_redundant_mean, opt_start_from, opt_sep_sign)
         
         logging.info("4____轉換地名____")
         output_name = retrieve_locale_name(sheet, locale_name, is_exporting_sql, not args_config.yes)
         
         if is_exporting_sql:
             logging.info("5____輸出文件____")
-            count_row, count_chara, sql_content = sheet.output_sql_full(output_name, opt_sort_prons)
+            count_row, count_chara, sql_content = sheet.output_sql_full(
+                output_name,
+                opt_sort_prons,
+                os.path.basename(input_path),
+            )
             logging.info(f"有效 {count_row} 音, {count_chara} 字")
             with open(os.path.join(output_dir, f"{output_name}.sql"), 'w', encoding='utf-8') as f:
                 f.write(sql_content)

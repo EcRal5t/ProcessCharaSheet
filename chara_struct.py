@@ -253,7 +253,7 @@ class Sheet:
                 ipa_cols : List[int],    # 音標在 excel 表格中所在（幾）列
                 pron_nd_cols: List[int], # 另讀；舊格式，已棄用
                 no_sim_to_trad: bool, keep_sim_to_trad: bool, cc_mean: bool, remove_redundant_mean: bool,
-                start_from: Optional[int]
+                start_from: Optional[int], opt_sep_sign: Optional[str]
                 ):
         """
         Sheet的建構函數，執行主要的處理流程。
@@ -270,6 +270,8 @@ class Sheet:
         chara_index_dict: Dict[str, int] = dict()
         logging.info(f"總共 {len(df)} 行")
         
+        if opt_sep_sign is None: opt_sep_sign = "/"
+        
         # --- 1. 讀取 DataFrame 並解析成 Chara 物件 ---
         for sheet_index in range(start_from or 0, len(df)):
             sheet_row  = df.loc[sheet_index]
@@ -280,12 +282,13 @@ class Sheet:
             
             # 解析每行的字頭、釋義、音標和粵拼
             chara     = Sheet.__parse_chara(sheet_index, sheet_row.iloc[char_col])
-            if chara in ["□"]: continue
+            if chara in ["□", ""]: continue
             meaning   = Sheet.__parse_meaning([sheet_row.iloc[i] for i in mean_cols])
-            _, ipas   = Sheet.read_row_syllable([sheet_row.iloc[i].strip() for i in ipa_cols])
+            _, ipas   = Sheet.read_row_syllable([sheet_row.iloc[i].strip() for i in ipa_cols], opt_sep_sign)
             syllables = Sheet.__parse_row_all_pron(sheet_index+2, chara, 
                             [sheet_row.iloc[i].strip() for i in pron_cols],
-                            [sheet_row.iloc[i].strip() for i in pron_nd_cols])
+                            [sheet_row.iloc[i].strip() for i in pron_nd_cols],
+                            opt_sep_sign)
             logging.debug(f"第 {sheet_index+1} 行: {(chara, syllables, meaning, ipas)}")
             
             if len(syllables)==0 and len(ipas)==0: continue # 如果沒有任何讀音信息，則跳過
@@ -343,8 +346,10 @@ class Sheet:
     def __parse_chara(rowidx:int, chara: str) -> str:
         """解析字頭，如果一個單元格有多個字，則發出警告並取第一個。"""
         chara_stripped = chara.strip()
+        if "？" in chara_stripped:
+            chara_stripped = chara_stripped.replace("？", "")
         if len(chara_stripped)>1:
-            logging.warning(f"{rowidx} 似乎含有多個字: {chara}")
+            logging.warning(f"{rowidx} 似乎含有多個字: {chara} -> {chara_stripped}")
             return chara_stripped[0]
         return chara_stripped
     
@@ -352,14 +357,16 @@ class Sheet:
     def __parse_meaning(meaning_: List[str], delimiter: str = "｜") -> str:
         """合併多個釋義列的內容。"""
         meaning = delimiter.join(filter(lambda x: x, meaning_))
+        # if "\n" in meaning: assert False, meaning
+        if "\n" in meaning: meaning = meaning.replace("\n", "\\n")
         if len(meaning)>0 and meaning[-1] in ["。", "；"]: meaning = meaning[:-1]
         return meaning.strip()
     
     @staticmethod
-    def __parse_row_all_pron(rowidx:int, chara: str, pron_col_content: List[str], pron_col_nd_content: List[str]) -> List[str]:
+    def __parse_row_all_pron(rowidx:int, chara: str, pron_col_content: List[str], pron_col_nd_content: List[str], opt_sep_sign: str) -> List[str]:
         """合併主讀音列和另讀音列的內容。"""
-        is_valid_main, pron_main = Sheet.read_row_syllable(pron_col_content)
-        is_valid_sub , pron_sub = Sheet.read_row_syllable(pron_col_nd_content)
+        is_valid_main, pron_main = Sheet.read_row_syllable(pron_col_content, opt_sep_sign)
+        is_valid_sub , pron_sub = Sheet.read_row_syllable(pron_col_nd_content, opt_sep_sign)
         if not is_valid_main or not is_valid_sub:
             logging.warning(f"{rowidx} 分隔符數目不匹配: {chara} {pron_main} {pron_sub}")
         # supposed to be the last column and there is no pron_sub column
@@ -369,16 +376,17 @@ class Sheet:
         return pron_main + pron_sub
     
     @staticmethod
-    def read_row_syllable(elements: List[str]) -> Tuple[bool, List[str]]:
+    def read_row_syllable(elements: List[str], opt_sep_sign: str) -> Tuple[bool, List[str]]:
         """
         解析一行中表示讀音的單元格。
-        能處理多列組合（如聲母、韻母、聲調分列）和單元格內用'/'分隔的多個讀音。
+        能處理多列組合（如聲母、韻母、聲調分列）和單元格內用 `opt_sep_sign` 分隔的多個讀音。
         例如，['h/j', 'oeng', '1'] -> ['hoeng1', 'joeng1']
         """
         if all([i=="" for i in elements]): return (True, [])
+        if "".join(elements) == "_": return (True, [])
         elements = [i if isinstance(i, str) else str(i) for i in elements]
         elements[0] = elements[0] if elements[0]!="0.0" else ""
-        elements_split = [i.split('/') for i in elements]
+        elements_split = [i.split(opt_sep_sign) for i in elements]
         seperator_count = [len(e)-1 for e in elements_split]
         seperator_count_filtered = list(filter(lambda x: x>0, seperator_count))
         if len(seperator_count_filtered)==0: return (True, ["".join(elements)])
@@ -476,7 +484,12 @@ class Sheet:
                     output_name_ += "{" + "/".join([str(j) for j in i]) + "}\n"
         return output_name_
     
-    def output_sql_full(self, output_name: str, sort_pron: bool = False) -> Tuple[int, int, str]:
+    def output_sql_full(
+        self,
+        output_name: str,
+        sort_pron: bool = False,
+        source_ref: str | None = None,
+    ) -> Tuple[int, int, str]:
         """
         將處理完成的所有數據生成為 SQL INSERT 語句。
 
@@ -519,11 +532,18 @@ class Sheet:
                         f"{escape_quote(jpp[0][2])}," \
                         f"{escape_quote(jpp[1])}," \
                         f"{escape_quote(ipa)},{escape_quote(prons.mean)},{out_alt})"
+                    # result += f"{count_row+1}," \
+                    #     f"{output_sql_string(entry.chara)}," \
+                    #     f"{output_sql_string(jpp[0][0])}," \
+                    #     f"{output_sql_string(jpp[0][1])}," \
+                    #     f"{output_sql_string(jpp[0][2])}," \
+                    #     f"{output_sql_string(jpp[1])}," \
+                    #     f"{output_sql_string(ipa)},{output_sql_string(prons.mean)},{out_alt})"
                     count_row += 1
                 alt_idx += 1
             count_chara += 1
         result += ";"
-        result += output_sql_footer(output_name)
+        result += output_sql_footer(output_name, count_row, source_ref)
         return (count_row, count_chara, result)
 
 def get_col_index(colname: str) -> int:
@@ -538,9 +558,15 @@ def get_col_index(colname: str) -> int:
         return ord(colname)-65 # 'A' -> 0
     else:
         return ord(colname)-97 # 'a' -> 0
+
+
+def output_sql_string(value: str) -> str:
+    """返回不受引号、反斜线或 NO_BACKSLASH_ESCAPES 影响的 UTF-8 SQL 字面量。"""
+    encoded = str(value).encode("utf-8").hex()
+    return f"CONVERT(X'{encoded}' USING utf8mb4)"
     
 def output_sql_header(output_name):
-    """生成 SQL 數據庫的 CREATE TABLE 和 INSERT INTO 語句頭部。"""
+    """生成以 staging 表原子替换线上地点表的 SQL 头部。"""
     return \
 """CREATE TABLE IF NOT EXISTS `%s` (
   `id` int NOT NULL,
@@ -556,11 +582,73 @@ def output_sql_header(output_name):
   KEY `idx_chara_lookup` (`chara`(2)),
   KEY `idx_pron_lookup` (`initial`(5), `nuclei`(5), `coda`(5))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-TRUNCATE TABLE `%s`;
+DROP TABLE IF EXISTS `%s__new`;
+DROP TABLE IF EXISTS `%s__old`;
+CREATE TABLE `%s__new` LIKE `%s`;
 
-INSERT INTO `%s` (`id`, `chara`, `initial`, `nuclei`, `coda`, `tone`, `ipa`, `note`, `alt_group`) VALUES""".replace("%s", output_name)
+INSERT INTO `%s__new` (`id`, `chara`, `initial`, `nuclei`, `coda`, `tone`, `ipa`, `note`, `alt_group`) VALUES""".replace("%s", output_name)
 
 
-def output_sql_footer(output_name: str) -> str:
-    """刷新批量导入后的索引统计信息。"""
-    return f"\nANALYZE TABLE `{output_name}`;"
+def output_sql_footer(
+    output_name: str,
+    expected_count: int,
+    source_ref: str | None = None,
+) -> str:
+    """校验 staging 行数、原子替换正式表，并向统一表同步队列发通知。"""
+    source_ref = source_ref or f"{output_name}.sql"
+    enqueue_sql = (
+        "INSERT INTO `common_sync_queue` "
+        "(`area_id`, `legacy_table`, `source_ref`, `requested_generation`, "
+        "`processed_generation`, `status`, `attempt_count`, `requested_at`, "
+        "`started_at`, `completed_at`, `last_error`) "
+        f"SELECT `id`, `sheetname`, {output_sql_string(source_ref)}, 1, 0, "
+        "'pending', 0, NOW(), NULL, NULL, NULL FROM `i_area_list` "
+        f"WHERE `sheetname` = {output_sql_string(output_name)} "
+        "ON DUPLICATE KEY UPDATE "
+        "`legacy_table` = VALUES(`legacy_table`), "
+        "`source_ref` = VALUES(`source_ref`), "
+        "`requested_generation` = `requested_generation` + 1, "
+        "`status` = 'pending', `attempt_count` = 0, "
+        "`requested_at` = NOW(), `started_at` = NULL, "
+        "`completed_at` = NULL, `last_error` = NULL"
+    )
+    enqueue_literal = "'" + enqueue_sql.replace("'", "''") + "'"
+    return (
+        f"\nANALYZE TABLE `{output_name}__new`;\n"
+        f"SET @jyutdict_expected_rows = {expected_count};\n"
+        f"SET @jyutdict_actual_rows = (SELECT COUNT(*) FROM `{output_name}__new`);\n"
+        "SET @jyutdict_swap_sql = IF(\n"
+        "  @jyutdict_actual_rows = @jyutdict_expected_rows,\n"
+        f"  'RENAME TABLE `{output_name}` TO `{output_name}__old`, "
+        f"`{output_name}__new` TO `{output_name}`',\n"
+        "  'DO 0'\n"
+        ");\n"
+        "PREPARE jyutdict_swap_stmt FROM @jyutdict_swap_sql;\n"
+        "EXECUTE jyutdict_swap_stmt;\n"
+        "DEALLOCATE PREPARE jyutdict_swap_stmt;\n"
+        f"DROP TABLE IF EXISTS `{output_name}__old`;\n"
+        "SET @jyutdict_queue_installed = (\n"
+        "  SELECT COUNT(*) FROM information_schema.TABLES\n"
+        "  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'common_sync_queue'\n"
+        ");\n"
+        "SET @jyutdict_enqueue_sql = IF(\n"
+        "  @jyutdict_actual_rows = @jyutdict_expected_rows\n"
+        "    AND @jyutdict_queue_installed = 1,\n"
+        f"  {enqueue_literal},\n"
+        "  'DO 0'\n"
+        ");\n"
+        "PREPARE jyutdict_enqueue_stmt FROM @jyutdict_enqueue_sql;\n"
+        "EXECUTE jyutdict_enqueue_stmt;\n"
+        "SET @jyutdict_queue_rows = ROW_COUNT();\n"
+        "DEALLOCATE PREPARE jyutdict_enqueue_stmt;\n"
+        "SELECT IF(@jyutdict_actual_rows = @jyutdict_expected_rows, "
+        "'IMPORT_OK', 'IMPORT_FAILED_ROW_COUNT') AS `jyutdict_import_status`, "
+        "@jyutdict_expected_rows AS `expected_rows`, "
+        "@jyutdict_actual_rows AS `actual_rows`,\n"
+        "CASE\n"
+        "  WHEN @jyutdict_actual_rows <> @jyutdict_expected_rows THEN 'NOT_QUEUED_IMPORT_FAILED'\n"
+        "  WHEN @jyutdict_queue_installed = 0 THEN 'QUEUE_NOT_INSTALLED'\n"
+        "  WHEN @jyutdict_queue_rows = 0 THEN 'QUEUE_AREA_NOT_FOUND'\n"
+        "  ELSE 'QUEUED'\n"
+        "END AS `jyutdict_sync_queue_status`;"
+    )

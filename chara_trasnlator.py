@@ -248,7 +248,7 @@ jpp2ipa_ini = { "":"",
 "zl":"tɬ", "cl":"tɬʰ", "l":"l", 
 "gw":"kʷ", "kw":"kʷʰ", "hw":"hʷ",
 "gv":"kᵛ", "kv":"kᵛʰ", "hv":"hᵛ",
-"rh":"ɦ",
+"rh":"ɦ", "v":"ʋ",
 }
 # 韵母 j++ -> IPA
 jpp2ipa_vow = {
@@ -429,18 +429,20 @@ ipa2jpp_ini = { v:k for k,v in jpp2ipa_ini.items() }
 # 更新一些多对一或不明确的映射
 ipa2jpp_ini.update({"kw":"gw", "kwh":"kw", "hw":"hw", "kʰʷ":"kw"})
 ipa2jpp_ini.update({"kv":"gv", "kvh":"kv", "hv":"hv", "kʰᵛ":"kv"})
+ipa2jpp_ini.update({"ʋ":"v"})
 ipa2jpp_ini.update({"ts":"z", "tsʰ":"c", "tsh":"c"})
 ipa2jpp_ini.update({"ʃ":"sh", "tʃ":"zh", "tʃʰ":"ch", "tʃh":"ch"})
 ipa2jpp_ini.update({"ɕ":"sj", "tɕ":"zj", "tɕʰ":"cj", "tɕh":"cj"})
 ipa2jpp_vow = { v:k for k,v in jpp2ipa_vow.items() }
 ipa2jpp_vow.update({"m":"m", "n":"n", "ŋ":"ng"})
 ipa2jpp_vow.update({"ʌ": "a", "ɑ": "aa"})
+ipa2jpp_vow.update({"ɜ": "ea"})
 ipa2jpp_cod = { v:k for k,v in jpp2ipa_cod.items() }
 ipa2jpp_cod.update({ v:k for k,v in jpp2ipa_cod_mark.items() })
 
 # --- IPA 音节结构的正则表达式 ---
 ipa_tone_format = '(\\d*)$'
-ipa_vows_format = '([iyɯueɵoɤəɛøœɔæɐaɑɒʌɿɪʊᵃ]+|ŋ̩|n̩|m̩|ŋ̍)'
+ipa_vows_format = '([iyɯueɵoɤəɛøœɔæɐaɑɒʌɿɪʊᵃə̯a̯ɜ]+|ŋ̩|n̩|m̩|ŋ̍)'
 ipa_coda_format = '([(mnŋptk)̚?]?|ʔ?)$'
 
 # 将 IPA 音节划分成辅音声母、元音和辅音韵尾

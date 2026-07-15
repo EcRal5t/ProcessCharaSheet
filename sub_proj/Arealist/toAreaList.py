@@ -8,7 +8,7 @@ def sql_escape(s: str) -> str:
     """
     return s.replace("'", "''")
 
-def markdown_to_sql(markdown_table: str, table_name: str = "IAreaList") -> str:
+def markdown_to_sql(markdown_table: str, table_name: str = "i_area_list") -> str:
     """
     将Markdown表格字符串转换回SQL INSERT语句。
     - 假定 'emit' 是最后一列。

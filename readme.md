@@ -40,12 +40,25 @@
 
 生成的地點表會自帶兩個網站查詢索引：`chara` 查字索引，以及
 `initial + nuclei + coda` 查音索引；導入完成後會自動執行
-`ANALYZE TABLE` 更新統計信息。`TRUNCATE TABLE` 不會刪除已有索引。
+`ANALYZE TABLE` 更新統計信息。生成 SQL 會先把全部資料寫入
+`表名__new`，成功後使用一次 `RENAME TABLE` 原子替換正式表；若批量
+INSERT 中途失敗，原正式表不會被清空或只剩半份資料。
+所有文字值使用 UTF-8 十六進制字面量輸出，不依賴服務器的引號轉義或
+`NO_BACKSLASH_ESCAPES` 設置。
 
 如果目標數據庫中的同名表是由舊版腳本建立，`CREATE TABLE IF NOT EXISTS`
 不會補建新索引；需先在網站倉庫執行一次：
 
 `php api/scripts/lookup_indexes.php --apply`
+
+網站部署統一地點讀音表及同步隊列後，舊地點表仍是 Excel SQL 的導入入口。
+生成的 SQL 只有在行數校驗及原子換表成功後才會自動寫入
+`common_sync_queue`，服務器 cron 隨後同步統一表；在 phpMyAdmin 每次應確認
+最後一行同時顯示 `IMPORT_OK` 和 `QUEUED`，無需再逐表登入服務器執行 PHP。
+
+`QUEUE_NOT_INSTALLED` 表示服務器尚未安裝新版隊列表；`QUEUE_AREA_NOT_FOUND`
+表示輸出表名與 `i_area_list.sheetname` 不一致。同步失敗時網站統一表會保留
+導入前的完整狀態；不要手工修改 `common_entries`。
 
 ### 配置音系 jgzw 數據
 

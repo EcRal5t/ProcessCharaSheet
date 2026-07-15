@@ -3,7 +3,7 @@ import sys
 import argparse
 from typing import Optional, Set, List, Tuple, Union, Dict
 
-from chara_trasnlator import RULE, split_jpp
+from chara_trasnlator import RULE, split_jpp, split_ipa
 from chara_struct import Sheet, Chara
 
 
@@ -14,7 +14,7 @@ if __name__ == '__main__':
     args_parser.add_argument('-o', "--output", type=str, help='output to file, No specifying for to console', default=None, required=False)
     
     args_parser.add_argument('-l', '--loc', type=str, help='地名', required=False, default='')
-    args_parser.add_argument('-m', '--mode', type=str, help='輸出模式', choices=['jpp2ipa', 'ipa2jpp', 'split_jpp'], default='jpp2ipa')
+    args_parser.add_argument('-m', '--mode', type=str, help='輸出模式', choices=['jpp2ipa', 'ipa2jpp', 'split_jpp', 'split_ipa'], default='jpp2ipa')
     #args_parser.add_argument('-v', '--version', action='version', version='v0.8/230742')
     
     args_parser.add_argument('-t', '--term', action='store_true', help='未分割的行作輸入')
@@ -70,6 +70,15 @@ if __name__ == '__main__':
             result: List[List[str]] = []
             for syllable in syllables:
                 syllable_s, syllable_t = split_jpp(syllable)
+                result.append([syllable_s[0], syllable_s[1], syllable_s[2], syllable_t])
+            result_ = [(i[0] if len(set(i))==1 else "/".join(i)) for i in zip(*result)]
+            print(" | ".join(result_), file=outfile)
+            
+    elif args_config.mode == 'split_ipa':
+        for syllables in candidate:
+            result: List[List[str]] = []
+            for syllable in syllables:
+                syllable_s, syllable_t = split_ipa(syllable)
                 result.append([syllable_s[0], syllable_s[1], syllable_s[2], syllable_t])
             result_ = [(i[0] if len(set(i))==1 else "/".join(i)) for i in zip(*result)]
             print(" | ".join(result_), file=outfile)
