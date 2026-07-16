@@ -231,7 +231,7 @@ initial_format = '^(mb?|n[jrd]?|ngg?|[bdg]{1,2}|g[hn]?|r[bdgzscrh]|[zcs][hrjl]?|
 # 韵尾正则：在元音后匹配可能的韵尾
 coda_format    = "(?<=[aoreiwuy])(n[ng]?|[mptkh])(?=[\\d`*]|$)"
 # 声调正则：匹配结尾的数字声调
-tone_format    = "[0-9]?[0-9*][0-9'ABCD]?(`\\d+)?$"
+tone_format    = "[0-9]?[0-9*]0?[0-9'ABCD]?(`\\d+)?$"
 # 韵母/元音正则：匹配核心元音部分
 vowel_format   = '(^ng?$|^m$|i[rwi]?|u[rwu]?|[aeo][aeowr]?|yu$|y)$'
 
@@ -442,7 +442,7 @@ ipa2jpp_cod.update({ v:k for k,v in jpp2ipa_cod_mark.items() })
 
 # --- IPA 音节结构的正则表达式 ---
 ipa_tone_format = '(\\d*)$'
-ipa_vows_format = '([iyɯueɵoɤəɛøœɔæɐaɑɒʌɿɪʊᵃə̯a̯ɜ]+|ŋ̩|n̩|m̩|ŋ̍)'
+ipa_vows_format = '([iyɯueɵoɤəɛøœɔæɐaɑɒʌɿɪʊᵃə̯a̯ɜɯ̜]+|ŋ̩|n̩|m̩|ŋ̍)'
 ipa_coda_format = '([(mnŋptk)̚?]?|ʔ?)$'
 
 # 将 IPA 音节划分成辅音声母、元音和辅音韵尾

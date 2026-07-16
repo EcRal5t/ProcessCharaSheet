@@ -43,8 +43,8 @@
 `ANALYZE TABLE` 更新統計信息。生成 SQL 會先把全部資料寫入
 `表名__new`，成功後使用一次 `RENAME TABLE` 原子替換正式表；若批量
 INSERT 中途失敗，原正式表不會被清空或只剩半份資料。
-所有文字值使用 UTF-8 十六進制字面量輸出，不依賴服務器的引號轉義或
-`NO_BACKSLASH_ESCAPES` 設置。
+所有普通文字值直接以可閱讀的 UTF-8 輸出；只有引號、反斜線或控制字符才會
+局部使用 `CHAR(...)`，因此仍不依賴服務器的 `NO_BACKSLASH_ESCAPES` 設置。
 
 如果目標數據庫中的同名表是由舊版腳本建立，`CREATE TABLE IF NOT EXISTS`
 不會補建新索引；需先在網站倉庫執行一次：

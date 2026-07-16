@@ -501,10 +501,6 @@ class Sheet:
             Tuple[int, int, str]: (總行數, 總字數, SQL語句字符串)。
         """
         
-        def escape_quote(string: str) -> str:
-            if not string: return '""'
-            return "'" + string + "'" if "'" not in string else '"' + string + '"'
-        
         count_row, count_chara = 0, 0
         result = ""
         result += output_sql_header(output_name) # 添加 CREATE TABLE 頭部
@@ -526,19 +522,12 @@ class Sheet:
                     if count_row >0: result += ","
                     result += "\n("
                     result += f"{count_row+1}," \
-                        f"'{entry.chara}'," \
-                        f"{escape_quote(jpp[0][0])}," \
-                        f"{escape_quote(jpp[0][1])}," \
-                        f"{escape_quote(jpp[0][2])}," \
-                        f"{escape_quote(jpp[1])}," \
-                        f"{escape_quote(ipa)},{escape_quote(prons.mean)},{out_alt})"
-                    # result += f"{count_row+1}," \
-                    #     f"{output_sql_string(entry.chara)}," \
-                    #     f"{output_sql_string(jpp[0][0])}," \
-                    #     f"{output_sql_string(jpp[0][1])}," \
-                    #     f"{output_sql_string(jpp[0][2])}," \
-                    #     f"{output_sql_string(jpp[1])}," \
-                    #     f"{output_sql_string(ipa)},{output_sql_string(prons.mean)},{out_alt})"
+                        f"{output_sql_string(entry.chara)}," \
+                        f"{output_sql_string(jpp[0][0])}," \
+                        f"{output_sql_string(jpp[0][1])}," \
+                        f"{output_sql_string(jpp[0][2])}," \
+                        f"{output_sql_string(jpp[1])}," \
+                        f"{output_sql_string(ipa)},{output_sql_string(prons.mean)},{out_alt})"
                     count_row += 1
                 alt_idx += 1
             count_chara += 1
@@ -561,9 +550,30 @@ def get_col_index(colname: str) -> int:
 
 
 def output_sql_string(value: str) -> str:
-    """返回不受引号、反斜线或 NO_BACKSLASH_ESCAPES 影响的 UTF-8 SQL 字面量。"""
-    encoded = str(value).encode("utf-8").hex()
-    return f"CONVERT(X'{encoded}' USING utf8mb4)"
+    """返回可阅读且不受 NO_BACKSLASH_ESCAPES 影响的 UTF-8 SQL 字面量。"""
+    value = str(value)
+    parts = []
+    plain = []
+
+    def flush_plain() -> None:
+        if plain:
+            parts.append("_utf8mb4'" + "".join(plain) + "'")
+            plain.clear()
+
+    for char in value:
+        codepoint = ord(char)
+        if char in ("'", "\\") or codepoint < 32 or codepoint == 127:
+            flush_plain()
+            parts.append(f"CHAR({codepoint})")
+        else:
+            plain.append(char)
+    flush_plain()
+
+    if not parts:
+        return "_utf8mb4''"
+    if len(parts) == 1:
+        return parts[0]
+    return "CONCAT(" + ", ".join(parts) + ")"
     
 def output_sql_header(output_name):
     """生成以 staging 表原子替换线上地点表的 SQL 头部。"""
