@@ -4,6 +4,7 @@
 import os
 import logging
 import argparse
+from pathlib import Path
 from typing import Optional, Any, List, Tuple, Dict, Callable, Union
 from functools import reduce
 
@@ -15,6 +16,26 @@ from chara_trasnlator import split_jpp
 from openpyxl.styles.fills import Fill
 old_init = Fill.__init__
 Fill.__init__ = lambda self, *args, **kw: old_init(self)
+
+ROOT = Path(__file__).resolve().parent
+
+
+def resolve_mc_data_path(explicit: Optional[str]) -> Path:
+    candidates = []
+    if explicit:
+        candidates.append(Path(explicit))
+    if os.environ.get("JYUTDICT_MC_DATA"):
+        candidates.append(Path(os.environ["JYUTDICT_MC_DATA"]))
+    # Repository layout used by Jyutdict: Jyutdict/j++2ipa/通用表 and Jyutdict/字表.
+    if len(ROOT.parents) >= 2:
+        candidates.append(ROOT.parents[1] / "字表" / "qieyun-auto" / "KwangUon.csv")
+    for path in candidates:
+        if path.is_file():
+            return path
+    searched = "、".join(str(path) for path in candidates) or "<未提供>"
+    raise FileNotFoundError(
+        f"找不到中古音数据 KwangUon.csv；请用 --mc-data 指定或设置 JYUTDICT_MC_DATA。已检查：{searched}"
+    )
 
 def retrieve_locale_name(sheet:Sheet, name: str, is_output: bool, confirm_output: bool = True) -> str:
     charas_prons = sheet.query(name)
@@ -70,6 +91,15 @@ if __name__ == '__main__':
     args_parser.add_argument('-I', '--ipa', type=str, help='IPA 所在列', default="")
     args_parser.add_argument('-RM', '--remove_redundant_mean', action='store_true', help='非多音的字不保留释义')
     args_parser.add_argument('--no-s2t', action='store_true', help='不轉換簡體字')
+    args_parser.add_argument(
+        '--s2t-mode', choices=['legacy', 'off', 'suggest', 'copy', 'move'], default='legacy',
+        help='字頭简繁策略：legacy 保持旧 OpenCC 行为；suggest 只报告；copy 复制安全繁体 Entry；move 安全改名',
+    )
+    args_parser.add_argument('--s2t-relations', type=str, help='严格简繁 TSV；默认使用 data/s2t_strict.tsv')
+    args_parser.add_argument('--audit-mc', action='store_true', help='输出中古音对应及疑似错行审计报告')
+    args_parser.add_argument('--phonology-table', action='store_true', help='在控制台额外输出声母、韵母条件熵归并表')
+    args_parser.add_argument('--mc-data', type=str, help='qieyun-auto KwangUon.csv 路径；也可设置 JYUTDICT_MC_DATA')
+    args_parser.add_argument('--audit-limit', type=int, default=200, help='控制台最多显示多少条中古音审计候选')
     args_parser.add_argument('--sort-pron', default=False, action='store_true', help='輸出中字的讀音按字母序排序')
     args_parser.add_argument('--keep-s2t', action='store_true', help='簡轉繁衝突時簡體保留，否則捨棄')
     args_parser.add_argument('--cc-mean', action='store_true', help='將釋義轉爲繁體')
@@ -80,6 +110,14 @@ if __name__ == '__main__':
     args_config = args_parser.parse_args()
     if not args_config.ipa and not args_config.pron:
         args_parser.error("j++ 和 ipa 至少存在一列")
+    if args_config.no_s2t:
+        if args_config.s2t_mode not in {'legacy', 'off'}:
+            args_parser.error("--no-s2t 不能与 suggest/copy/move 同时使用")
+        args_config.s2t_mode = 'off'
+    if args_config.keep_s2t and args_config.s2t_mode != 'legacy':
+        args_parser.error("--keep-s2t 只适用于 --s2t-mode legacy")
+    if args_config.audit_limit < 1:
+        args_parser.error("--audit-limit 必须大于 0")
     
     logging.basicConfig(level=logging.DEBUG if args_config.debug else logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
     logging.debug(args_config)
@@ -102,14 +140,15 @@ if __name__ == '__main__':
     col_ipa_idxs     = [get_col_index(col) for col in args_config.ipa]
     logging.debug(f"{col_char_idx=}, {col_pron_idxs=}, {col_pron_nd_idxs=}, {col_mean_idxs=}, {col_ipa_idxs=}")
     
-    opt_s2t_off:          bool = args_config.no_s2t
+    opt_s2t_mode:         str = args_config.s2t_mode
+    opt_s2t_off:          bool = opt_s2t_mode == 'off'
     opt_s2t_keep_collide: bool = args_config.keep_s2t
     opt_s2t_meanings:     bool = args_config.cc_mean
     opt_remove_redundant_mean: bool = args_config.remove_redundant_mean
     opt_sort_prons:       bool = args_config.sort_pron
     opt_start_from:       Optional[int] = args_config.start_from
     opt_sep_sign:         str = args_config.sep
-    logging.info(f"{opt_s2t_off=}, {opt_s2t_keep_collide=}, {opt_s2t_meanings=}, {opt_remove_redundant_mean=}, {opt_start_from=}")
+    logging.info(f"{opt_s2t_mode=}, {opt_s2t_keep_collide=}, {opt_s2t_meanings=}, {opt_remove_redundant_mean=}, {opt_start_from=}")
     
     is_exporting_sql = not args_config.no_output
     
@@ -131,13 +170,79 @@ if __name__ == '__main__':
                 col_mean_idxs,
                 col_ipa_idxs,
                 col_pron_nd_idxs,
-                opt_s2t_off, opt_s2t_keep_collide, opt_s2t_meanings, opt_remove_redundant_mean, opt_start_from, opt_sep_sign)
+                opt_s2t_off, opt_s2t_keep_collide, opt_s2t_meanings, opt_remove_redundant_mean,
+                opt_start_from, opt_sep_sign, True, True)
+
+        # ``main.py`` defers every head-character conversion until after the
+        # immutable audit view has been built.  Other callers keep Sheet's old
+        # constructor behaviour unless they explicitly request deferral.
         
-        logging.info("4____轉換地名____")
+        safe_modes = {'suggest', 'copy', 'move'}
+        if args_config.audit_mc or args_config.phonology_table or opt_s2t_mode in safe_modes:
+            from phonology import read_middle_chinese
+            from phonology_audit import extract_sheet_readings, render_audit_console, run_audit
+            from safe_s2t import (
+                DEFAULT_RELATION_PATH,
+                analyze_safe_s2t,
+                apply_safe_s2t,
+                load_strict_relations,
+                render_safe_s2t_console,
+            )
+
+            logging.info("4____中古音與安全簡繁分析____")
+            mc_path = resolve_mc_data_path(args_config.mc_data)
+            relation_path = Path(args_config.s2t_relations) if args_config.s2t_relations else DEFAULT_RELATION_PATH
+            strict_relations = load_strict_relations(relation_path)
+            audit_result = None
+            if args_config.audit_mc or args_config.phonology_table:
+                audit_result = run_audit(
+                    sheet,
+                    mc_path,
+                    strict_relations,
+                    case_limit=args_config.audit_limit,
+                )
+                if args_config.audit_mc:
+                    print(render_audit_console(audit_result), flush=True)
+                if args_config.phonology_table:
+                    from phonology_table import render_correspondence_tables
+                    print(render_correspondence_tables(audit_result.fitted.model), flush=True)
+
+            if opt_s2t_mode in safe_modes:
+                if audit_result is not None:
+                    dialect_data = audit_result.dialect
+                    middle_chinese = audit_result.middle_chinese
+                else:
+                    dialect_data = extract_sheet_readings(sheet)
+                    middle_chinese, _ = read_middle_chinese(mc_path)
+                s2t_result = analyze_safe_s2t(
+                    dialect_data,
+                    middle_chinese,
+                    strict_relations,
+                )
+                changes = apply_safe_s2t(sheet, s2t_result, opt_s2t_mode)
+                logging.info(
+                    "%s",
+                    render_safe_s2t_console(s2t_result, limit=args_config.audit_limit)
+                    + f"\n模式 {opt_s2t_mode}：实际应用 {len(changes)} 个 Entry。",
+                )
+                if opt_s2t_meanings:
+                    sheet.convert_meanings_to_traditional()
+
+        if opt_s2t_mode == 'legacy':
+            sheet.apply_legacy_s2t(
+                keep_chara_s2t=opt_s2t_keep_collide,
+                cc_mean=opt_s2t_meanings,
+            )
+
+        if opt_remove_redundant_mean:
+            for entry in sheet.entry_list:
+                entry.rm_redundant_mean()
+
+        logging.info("5____轉換地名____")
         output_name = retrieve_locale_name(sheet, locale_name, is_exporting_sql, not args_config.yes)
         
         if is_exporting_sql:
-            logging.info("5____輸出文件____")
+            logging.info("6____輸出文件____")
             count_row, count_chara, sql_content = sheet.output_sql_full(
                 output_name,
                 opt_sort_prons,
@@ -147,7 +252,7 @@ if __name__ == '__main__':
             with open(os.path.join(output_dir, f"{output_name}.sql"), 'w', encoding='utf-8') as f:
                 f.write(sql_content)
 
-        logging.info("6____完成____")
+        logging.info("7____完成____")
     except KeyboardInterrupt as e:
         print()
         logging.error("用戶中斷")

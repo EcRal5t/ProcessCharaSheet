@@ -37,13 +37,15 @@ class Chara:
         prons: List[str]
         mean: str
         ipas: List[str]
+        source_rows: List[int]
         
         _splited: List[Tuple[Tuple[str, str, str], str]]
         
-        def __init__(self, prons: List[str], mean: str, ipas: List[str]):
+        def __init__(self, prons: List[str], mean: str, ipas: List[str], source_rows: Optional[List[int]] = None):
             self.prons = prons
             self.mean  = mean
             self.ipas  = ipas
+            self.source_rows = list(source_rows or [])
             self._splited = []
             
         def __eq__(self, __o: object) -> bool:
@@ -158,7 +160,7 @@ class Chara:
     def __init__(self, index: int, chara: str, prons: List[str], mean: str, ipas: List[str]):
         self.index = index
         self.chara = chara
-        self.multiprons = [Chara.Pron(prons, mean, ipas)]
+        self.multiprons = [Chara.Pron(prons, mean, ipas, [index + 1])]
         
     def __str__(self):
         return self.chara+" => " + ' | '.join([str(i) for i in self.multiprons])
@@ -173,7 +175,7 @@ class Chara:
         if len(self.multiprons)==1: return
         
         # 創建一個副本進行操作，避免在遍歷時修改列表
-        multiprons = [Chara.Pron(m.prons.copy(), m.mean, m.ipas.copy()) for m in self.multiprons]
+        multiprons = [Chara.Pron(m.prons.copy(), m.mean, m.ipas.copy(), m.source_rows.copy()) for m in self.multiprons]
         for i in range(len(multiprons[:-1])):
             if len(multiprons[i].prons)==0: continue # 跳過已被合併的項
             for j in range(len(multiprons[i+1:])):
@@ -197,7 +199,8 @@ class Chara:
                     new_ipas_list = list(set(multiprons[i].ipas+multiprons[i+1+j].ipas))
                     
                     # 更新當前項，並清空被合併的項
-                    multiprons[i] = Chara.Pron(new_prons_list, new_mean, new_ipas_list)
+                    source_rows = sorted(set(multiprons[i].source_rows + multiprons[i+1+j].source_rows))
+                    multiprons[i] = Chara.Pron(new_prons_list, new_mean, new_ipas_list, source_rows)
                     multiprons[i+1+j].prons = []
                     logging.info(f"{self.index} 合併: {self.chara}: [{i}]{self.multiprons[i]}, [{i+1+j}]{self.multiprons[i+1+j]} => {multiprons[i]}")
 
@@ -253,7 +256,9 @@ class Sheet:
                 ipa_cols : List[int],    # 音標在 excel 表格中所在（幾）列
                 pron_nd_cols: List[int], # 另讀；舊格式，已棄用
                 no_sim_to_trad: bool, keep_sim_to_trad: bool, cc_mean: bool, remove_redundant_mean: bool,
-                start_from: Optional[int], opt_sep_sign: Optional[str]
+                start_from: Optional[int] = None, opt_sep_sign: Optional[str] = None,
+                defer_s2t: bool = False,
+                defer_cleanup: bool = False,
                 ):
         """
         Sheet的建構函數，執行主要的處理流程。
@@ -298,7 +303,7 @@ class Sheet:
                 chara_index_dict[chara] = len(entry_list)
                 entry_list.append(Chara(sheet_index+1, chara, syllables, meaning, ipas))
             else:
-                entry_list[chara_index_dict[chara]].append(Chara.Pron(syllables, meaning, ipas))
+                entry_list[chara_index_dict[chara]].append(Chara.Pron(syllables, meaning, ipas, [sheet_index + 2]))
         logging.info(f"讀取 {len(entry_list)} 行")
         
         is_set_ipa = len(ipa_cols)>0
@@ -336,9 +341,9 @@ class Sheet:
                     prons.norm(self.rule.j2j, self.rule.i2i, self.rule.tone_j2j)
         
         # --- 4. 簡繁轉換和其他清理 ---
-        if not no_sim_to_trad:
-            self.__sim_2_trad(keep_chara_s2t=keep_sim_to_trad, cc_mean=cc_mean)
-        if remove_redundant_mean:
+        if not no_sim_to_trad and not defer_s2t:
+            self.apply_legacy_s2t(keep_chara_s2t=keep_sim_to_trad, cc_mean=cc_mean)
+        if remove_redundant_mean and not defer_cleanup:
             for i in self.entry_list:
                 i.rm_redundant_mean()
     
@@ -399,63 +404,32 @@ class Sheet:
         log = "\n".join(self.log)
         self.log = []
         return log
+
+    def rebuild_index(self) -> None:
+        """Rebuild the head-character index after an external, explicit mutation."""
+        self.chara_index_dict = {
+            entry.chara: index
+            for index, entry in enumerate(self.entry_list)
+            if entry.status >= 0
+        }
     
     def load_config(self, locale:str, append:List[Union[int, str]]) -> str:
         self.rule, msg = RULE.select(locale, append)
         return msg
     
     s2t_keeped_char: Set[str]
-    def __sim_2_trad(self, keep_chara_s2t: bool, cc_mean: bool) -> None:
-        """
-        執行簡體到繁體的轉換。
-        使用 opencc 工具，並維護一個不進行轉換的例外列表 (s2t_keeped_char)，
-        以處理“一簡對多繁”或在簡繁中均常用但意義不同的字。
-        """
+    def apply_legacy_s2t(self, keep_chara_s2t: bool, cc_mean: bool) -> None:
+        """Run the isolated compatibility policy used by old commands."""
+        from legacy_s2t import apply_legacy_s2t
+        apply_legacy_s2t(self, keep_collision=keep_chara_s2t, convert_meanings=cc_mean)
+
+    def convert_meanings_to_traditional(self) -> None:
+        """Apply the explicitly requested broad OpenCC conversion to meanings only."""
         import opencc
-        s2t_converter: opencc.OpenCC = opencc.OpenCC('s2t.json')
-        self.s2t_keeped_char = {
-            "干","后","系","历","板","表","丑","范","丰","刮","胡","回",
-            "伙","姜","借","克","困","里","帘","面","蔑","千","秋","松",
-            "咸","向","余","郁","御","愿","云","芸","沄","致","制","朱",
-            "筑","准","辟","别","卜","斗","谷","划","几","据","卷",
-            "了","累","朴","仆","曲","舍","胜","术","台","吁","佣","折",
-            "征","症","采","吃","床","峰","杠","恒","栗","秘","凶","熏",
-            "肴","占","苧","咨","粽","并","雇","广","么","霉","群","抬",
-            "涂","托","涌","游","灶","皂","庄","么","岩","叶","坏","厘",
-            "尸","个","冲","巩","碱","种","岳","于","网","万","糍",
-            "夸","荐","杰","晒","痴","姹","麽","昵","蘖","唇","虱","宁",
-            "膻","厂"
-        }
+        converter: opencc.OpenCC = opencc.OpenCC('s2t.json')
         for entry in self.entry_list:
-            chara = entry.chara
-            chara_t = s2t_converter.convert(chara)
-            # 如果是例外字，不轉換
-            if (chara_t!=chara) and chara in self.s2t_keeped_char:
-                logging.debug(f"{entry.index} 簡轉繁未應用 {chara} -> {chara_t}")
-                pass
-            if (chara_t!=chara) and chara not in self.s2t_keeped_char:
-                # 如果轉換後的繁體字已存在於字典中，則產生碰撞
-                if chara_t in self.chara_index_dict:
-                    if not keep_chara_s2t:
-                        logging.warning(f"{entry.index} 簡轉繁碰撞 {chara} -> {chara_t}")
-                        entry.status = -1
-                        continue
-                    else:
-                        logging.debug(f"{entry.index} 簡轉繁保留 {chara} -> {chara_t}")
-                        pass
-                else:
-                    # logging.warning(f"{entry.index} 簡轉繁 {chara} -> {chara_t}")
-                    entry.chara = chara_t
-                    entry.status = 1 # 標記為已轉換
-                    # 更新索引字典
-                    self.chara_index_dict[chara_t] = self.chara_index_dict[chara]
-                    self.chara_index_dict.pop(chara)
-                    continue
-        # 根據選項，對釋義也進行簡轉繁
-        if cc_mean:
-            for entry in self.entry_list:
-                for multipron in entry.multiprons:
-                    multipron.mean = s2t_converter.convert(multipron.mean)
+            for multipron in entry.multiprons:
+                multipron.mean = converter.convert(multipron.mean)
         
     
     def query(self, charas: str) -> List[List[Chara.Pron]]:
