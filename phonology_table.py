@@ -358,6 +358,35 @@ def _outcome_details(
     return tuple(details)
 
 
+DIVISION_SORT_ORDER = {
+    "一": 0,
+    "二": 1,
+    "三": 2,
+    "四": 3,
+}
+
+CHONGNIU_SORT_ORDER = {
+    "A": 0,
+    "B": 1,
+    "無": 2,
+}
+
+
+def _feature_value_sort_key(feature: str, value: str) -> tuple[float, str]:
+    if feature == "division":
+        return (DIVISION_SORT_ORDER.get(value, 99), value)
+    if feature == "chongniu":
+        return (CHONGNIU_SORT_ORDER.get(value, 99), value)
+    return (0, value)
+
+
+def _branch_sort_key(feature: str, values: tuple[str, ...]) -> tuple[tuple[float, str], ...]:
+    return tuple(
+        _feature_value_sort_key(feature, value)
+        for value in sorted(values, key=lambda value: _feature_value_sort_key(feature, value))
+    )
+
+
 def _partitions(
     observations: Sequence[TableObservation],
     feature: str,
@@ -373,11 +402,14 @@ def _partitions(
         or (_weight(rows) >= 2.0 and _purity(rows) >= 0.75)
     }
     small_values = sorted(
-        value for value, rows in raw.items()
-        if not (
-            _weight(rows) >= minimum_leaf_weight
-            or (_weight(rows) >= 2.0 and _purity(rows) >= 0.75)
-        )
+        (
+            value for value, rows in raw.items()
+            if not (
+                _weight(rows) >= minimum_leaf_weight
+                or (_weight(rows) >= 2.0 and _purity(rows) >= 0.75)
+            )
+        ),
+        key=lambda value: _feature_value_sort_key(feature, value),
     )
     if small_values:
         small_rows = tuple(
@@ -395,14 +427,20 @@ def _partitions(
             ]
             target = compatible[0] if compatible else max(large, key=lambda key: _weight(large[key]))
             rows = large.pop(target)
-            large[tuple(sorted((*target, *small_values)))] = (*rows, *small_rows)
+            large[tuple(sorted(
+                (*target, *small_values),
+                key=lambda value: _feature_value_sort_key(feature, value),
+            ))] = (*rows, *small_rows)
     # Fold values that already predict the same meaningful outcome modes before
     # charging the split complexity.  This strongly favours compact conditions.
     folded: defaultdict[tuple[str, ...], list[tuple[tuple[str, ...], tuple[TableObservation, ...]]]] = defaultdict(list)
     for values, rows in large.items():
         folded[_modes(rows)].append((values, rows))
     return {
-        tuple(sorted(value for values, _rows in group for value in values)): tuple(
+        tuple(sorted(
+            (value for values, _rows in group for value in values),
+            key=lambda value: _feature_value_sort_key(feature, value),
+        )): tuple(
             row for _values, rows in group for row in rows
         )
         for group in folded.values()
@@ -428,6 +466,17 @@ def _build_tree(
 
     best: tuple[float, float, str, dict[tuple[str, ...], tuple[TableObservation, ...]]] | None = None
     for feature in features:
+        # 重紐 is an incremental distinction inside third division, not a
+        # peer of division.  It may compete only after the current branch has
+        # already isolated third-division observations.
+        if (
+            feature == "chongniu"
+            and {
+                observation.position.effective_division
+                for observation in observations
+            } != {"三"}
+        ):
+            continue
         partitions = _partitions(observations, feature, minimum_leaf_weight)
         if len(partitions) < 2:
             continue
@@ -494,10 +543,39 @@ def _build_tree(
     return node
 
 
-def _branch_label(values: tuple[str, ...]) -> str:
-    if len(values) <= 3:
-        return "/".join(values)
+def _branch_label(
+    values: tuple[str, ...],
+    feature: str,
+) -> str:
+    ordered = list(sorted(
+        values,
+        key=lambda value: _feature_value_sort_key(feature, value),
+    ))
+    if feature == "division":
+        return "/".join(ordered)
+    if feature == "chongniu":
+        return "/".join("C" if value == "無" else value for value in ordered)
+    if len(ordered) <= 3:
+        return "/".join(ordered)
     return f"其餘{len(values)}類"
+
+
+def _append_display_condition(
+    conditions: tuple[tuple[str, str], ...],
+    feature: str,
+    value: str,
+) -> tuple[tuple[str, str], ...]:
+    """Render an accepted third-division chongniu split as 三A/三B/三C."""
+    if feature != "chongniu":
+        return (*conditions, (FEATURE_LABELS[feature], value))
+
+    combined_value = "/".join(f"三{part}" for part in value.split("/"))
+    rendered = list(conditions)
+    for index, (label, existing_value) in enumerate(rendered):
+        if label == FEATURE_LABELS["division"] and existing_value == "三":
+            rendered[index] = (label, combined_value)
+            return tuple(rendered)
+    return (*conditions, (FEATURE_LABELS["division"], combined_value))
 
 
 def _coarsen_reverse_final_outcomes(
@@ -587,13 +665,23 @@ def _rules_from_tree(
             len({observation.char for observation in node.observations}),
         )]
     rules = []
-    label = FEATURE_LABELS[node.split_feature]
-    for values, child in sorted(node.children.items(), key=lambda item: item[0]):
+    for values, child in sorted(
+        node.children.items(),
+        key=lambda item: _branch_sort_key(node.split_feature, item[0]),
+    ):
+        branch_value = _branch_label(
+            values,
+            node.split_feature,
+        )
         rules.extend(_rules_from_tree(
             base,
             child,
             component,
-            (*conditions, (label, _branch_label(values))),
+            _append_display_condition(
+                conditions,
+                node.split_feature,
+                branch_value,
+            ),
             base_entropy,
         ))
     return rules
@@ -703,7 +791,76 @@ def build_correspondence_rules(
             complexity_strength=complexity_strength,
         )
         rules.extend(_rules_from_tree(base, tree, component))
-    return tuple(rules)
+    return _merge_display_equivalent_rules(rules)
+
+
+def _merge_display_equivalent_rules(
+    rules: Sequence[TableRule],
+) -> tuple[TableRule, ...]:
+    """Merge leaves that became identical after compact display labelling."""
+    grouped_rules: dict[
+        tuple[str, tuple[tuple[str, str], ...]],
+        list[TableRule],
+    ] = {}
+    for rule in rules:
+        grouped_rules.setdefault((rule.base, rule.conditions), []).append(rule)
+
+    merged_rules = []
+    for (_base, _conditions), group in grouped_rules.items():
+        if len(group) == 1:
+            merged_rules.append(group[0])
+            continue
+        details_by_key: defaultdict[tuple[str, str], list[TableOutcome]] = defaultdict(list)
+        for rule in group:
+            for detail in rule.outcome_details:
+                details_by_key[(detail.value, detail.level)].append(detail)
+
+        merged_details = []
+        for (value, level), details in details_by_key.items():
+            checked_is_split = any(detail.checked_char_count is not None for detail in details)
+            pronunciations_by_char: defaultdict[str, set[str]] = defaultdict(set)
+            char_order = []
+            for detail in details:
+                for example in detail.examples:
+                    if example.char not in pronunciations_by_char:
+                        char_order.append(example.char)
+                    pronunciations_by_char[example.char].update(example.pronunciations)
+            char_count = sum(detail.char_count for detail in details)
+            checked_count = (
+                sum(detail.checked_char_count or 0 for detail in details)
+                if checked_is_split else None
+            )
+            example_limit = _example_limit(char_count + (checked_count or 0))
+            merged_details.append(TableOutcome(
+                value,
+                char_count,
+                checked_count,
+                tuple(
+                    TableExample(char, tuple(sorted(pronunciations_by_char[char])))
+                    for char in char_order[:example_limit]
+                ),
+                level,
+            ))
+        merged_details.sort(
+            key=lambda detail: (-detail.total_char_count, detail.value, detail.level)
+        )
+        total_chars = sum(rule.char_count for rule in group)
+        merged_rules.append(TableRule(
+            group[0].base,
+            group[0].conditions,
+            tuple(detail.value for detail in merged_details),
+            tuple(merged_details),
+            (
+                sum(rule.entropy_bits * rule.char_count for rule in group) / total_chars
+                if total_chars else 0.0
+            ),
+            (
+                sum(rule.information_gain_bits * rule.char_count for rule in group) / total_chars
+                if total_chars else 0.0
+            ),
+            total_chars,
+        ))
+    return tuple(merged_rules)
 
 
 def render_correspondence_tables(model: CorrespondenceModel) -> str:
@@ -748,6 +905,7 @@ class HtmlTableRow:
     rule: TableRule
     detail: TableOutcome
     share: float
+    relative_to_mode: float
     prominence: float
 
 
@@ -755,10 +913,21 @@ def _flatten_html_rows(rules: Sequence[TableRule]) -> list[HtmlTableRow]:
     rows = []
     for rule in rules:
         total = sum(detail.total_char_count for detail in rule.outcome_details)
+        mode_count = max(
+            (detail.total_char_count for detail in rule.outcome_details),
+            default=0,
+        )
         for detail in rule.outcome_details:
             share = detail.total_char_count / total if total else 0.0
+            relative_to_mode = detail.total_char_count / mode_count if mode_count else 0.0
             prominence = 1.0 if share >= 0.4 else 0.35 + 0.65 * share / 0.4
-            rows.append(HtmlTableRow(rule, detail, share, prominence))
+            rows.append(HtmlTableRow(
+                rule,
+                detail,
+                share,
+                relative_to_mode,
+                prominence,
+            ))
     return rows
 
 
@@ -814,14 +983,42 @@ def _example_html(
     example: TableExample,
     meanings: Mapping[tuple[str, str], Sequence[str]],
     pronunciations: Mapping[str, set[Pronunciation]],
+    *,
+    colour_by_final: bool,
 ) -> str:
     note = _example_note(example, meanings, pronunciations)
     note_html = (
         f'<span class="example-note">({html.escape(note)})</span>'
         if note else ""
     )
+    colour_class = ""
+    colour_style = ""
+    final_title = ""
+    if colour_by_final:
+        raw_pronunciations = set(example.pronunciations)
+        finals = sorted({
+            _normalise_checked_coda(pronunciation.final)
+            for pronunciation in pronunciations.get(example.char, set())
+            if pronunciation.raw in raw_pronunciations
+        })
+        if finals:
+            backgrounds = [_colour_for(final)[1] for final in finals]
+            if len(backgrounds) == 1:
+                background = backgrounds[0]
+            else:
+                width = 100 / len(backgrounds)
+                stops = []
+                for index, background_colour in enumerate(backgrounds):
+                    stops.extend((
+                        f"{background_colour} {index * width:.2f}%",
+                        f"{background_colour} {(index + 1) * width:.2f}%",
+                    ))
+                background = f"linear-gradient(90deg, {', '.join(stops)})"
+            colour_class = " example-coloured"
+            colour_style = f' style="background:{background}"'
+            final_title = f' title="現韻：{html.escape("/".join(finals), quote=True)}"'
     return (
-        '<span class="example">'
+        f'<span class="example{colour_class}"{colour_style}{final_title}>'
         f'<span class="example-char">{html.escape(example.char)}</span>{note_html}'
         "</span>"
     )
@@ -833,6 +1030,7 @@ def _render_html_rows(
     condition_depth: int,
     meanings: Mapping[tuple[str, str], Sequence[str]],
     pronunciations: Mapping[str, set[Pronunciation]],
+    colour_examples_by_final: bool,
 ) -> str:
     flat_rows = _flatten_html_rows(rules)
     spans = _rowspans(flat_rows, condition_depth)
@@ -845,7 +1043,12 @@ def _render_html_rows(
         level_badge = '<span class="level-badge">攝</span>' if detail.level == "she" else ""
         accent, background, foreground = _colour_for(detail.value)
         examples = "".join(
-            _example_html(example, meanings, pronunciations)
+            _example_html(
+                example,
+                meanings,
+                pronunciations,
+                colour_by_final=colour_examples_by_final,
+            )
             for example in detail.examples
         )
         count = (
@@ -893,10 +1096,12 @@ def _render_html_rows(
         cells.extend((
             f'<td class="modern-cell outcome-cell{level_class}{rare_class}" '
             f'style="--accent:{accent};--tone-bg:{background};--tone-fg:{foreground};'
-            f'--prominence:{row.prominence:.3f}" title="同一條件內佔比 {row.share:.1%}；'
+            f'--prominence:{row.prominence:.3f};--relative:{row.relative_to_mode:.4f}" '
+            f'title="相對主讀音 {row.relative_to_mode:.1%}；同一條件內佔比 {row.share:.1%}；'
             f'條件熵 {rule.entropy_bits:.2f} bits；降熵 {rule.information_gain_bits:.2f} bits">'
-            '<span class="outcome-fade"><span class="tone-dot"></span>'
-            f"{level_badge}<strong>{html.escape(modern)}</strong></span></td>",
+            '<span class="outcome-bar"><span class="outcome-fade">'
+            f"{level_badge}<strong>{html.escape(modern)}</strong>"
+            "</span></span></td>",
             f'<td class="count-cell outcome-cell{rare_class}" style="--prominence:{row.prominence:.3f}">'
             f'<span class="outcome-fade">{count}</span></td>',
             f'<td class="examples-cell outcome-cell{rare_class}" style="--prominence:{row.prominence:.3f}">'
@@ -921,6 +1126,7 @@ def _render_section(
     rules: Sequence[TableRule],
     meanings: Mapping[tuple[str, str], Sequence[str]],
     pronunciations: Mapping[str, set[Pronunciation]],
+    colour_examples_by_final: bool = False,
 ) -> str:
     row_count = sum(len(rule.outcome_details) for rule in rules)
     base_count = len({rule.base for rule in rules})
@@ -968,6 +1174,7 @@ def _render_section(
                 condition_depth=condition_depth,
                 meanings=meanings,
                 pronunciations=pronunciations,
+                colour_examples_by_final=colour_examples_by_final,
             )}
           </tbody>
         </table>
@@ -1035,6 +1242,7 @@ def render_correspondence_html(
         rules=reverse_final_rules,
         meanings=meanings,
         pronunciations=pronunciations,
+        colour_examples_by_final=True,
     )
     return f"""<!doctype html>
 <html lang="zh-Hant">
@@ -1118,6 +1326,15 @@ def render_correspondence_html(
     tbody th, tbody td {{ padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }}
     tbody tr:last-child > * {{ border-bottom: 0; }}
     tbody tr:hover > * {{ background-color: #f8faf9; }}
+    tbody tr.search-match > .outcome-cell {{
+      box-shadow: inset 0 0 0 2px #d69a19;
+    }}
+    tbody tr.search-match .outcome-bar {{
+      box-shadow: inset 0 0 0 2px rgba(214, 154, 25, .68);
+    }}
+    tbody tr.search-context > .outcome-cell {{
+      opacity: .48; filter: saturate(.55);
+    }}
     .position-cell {{
       min-width: 4.6rem; max-width: 8.5rem; border-right: 1px solid var(--line); background: #fbfcfb;
       text-align: center; vertical-align: middle;
@@ -1133,20 +1350,21 @@ def render_correspondence_html(
     .position-value {{ display: inline; color: var(--ink); font-weight: 700; }}
     .position-empty {{ min-width: 1.5rem; background: #fff; }}
     .modern-cell {{
-      position: relative; min-width: 5.8rem; overflow: hidden; border-left: 4px solid var(--accent);
-      background: var(--tone-bg); color: var(--tone-fg); font-size: .92rem; white-space: nowrap;
+      min-width: 6.4rem; padding: 0; background: transparent;
+      color: var(--tone-fg); font-size: .92rem; white-space: nowrap;
     }}
-    tbody tr:hover .modern-cell {{ background: var(--tone-bg); }}
-    .modern-cell::after {{
+    tbody tr:hover .modern-cell {{ background: #f8faf9; }}
+    .outcome-bar {{
+      position: relative; display: flex; align-items: center; width: max(3.8rem, calc(var(--relative) * 100%));
+      min-height: 100%; margin-left: auto; overflow: hidden; border-left: 4px solid var(--accent);
+      padding: 6px 8px; background: var(--tone-bg);
+    }}
+    .outcome-bar::after {{
       position: absolute; z-index: 0; inset: 0; background: #fff;
       opacity: calc(1 - var(--prominence)); content: "";
     }}
     .outcome-fade {{ position: relative; z-index: 1; opacity: var(--prominence); }}
-    .tone-dot {{
-      display: inline-block; width: 6px; height: 6px; margin-right: 6px;
-      border-radius: 50%; background: var(--accent); vertical-align: 1px;
-    }}
-    .level-she {{
+    .level-she .outcome-bar {{
       background-image: repeating-linear-gradient(
         -45deg, transparent 0, transparent 7px,
         rgba(255, 255, 255, .48) 7px, rgba(255, 255, 255, .48) 10px
@@ -1162,6 +1380,9 @@ def render_correspondence_html(
     .example {{
       display: inline-flex; align-items: baseline; min-height: 1.5rem; margin: 1px 3px 1px 0;
       padding: 1px 2px; background: transparent;
+    }}
+    .example-coloured {{
+      border-radius: 4px; padding-inline: 4px;
     }}
     .example-char {{
       font-size: .96rem;
@@ -1265,15 +1486,19 @@ def render_correspondence_html(
       input.addEventListener("input", () => {{
         const query = input.value.trim().toLocaleLowerCase();
         const rows = Array.from(table.querySelectorAll("tbody tr"));
+        const directMatches = new Set(
+          rows.filter(row => !query || row.dataset.search.toLocaleLowerCase().includes(query))
+        );
         const matchingBases = new Set(
-          rows
-            .filter(row => !query || row.dataset.search.toLocaleLowerCase().includes(query))
-            .map(row => row.dataset.base)
+          Array.from(directMatches, row => row.dataset.base)
         );
         let visible = 0;
         rows.forEach(row => {{
           const match = matchingBases.has(row.dataset.base);
+          const direct = directMatches.has(row);
           row.hidden = !match;
+          row.classList.toggle("search-match", Boolean(query) && direct);
+          row.classList.toggle("search-context", Boolean(query) && match && !direct);
           if (match) visible += 1;
         }});
         empty.hidden = visible !== 0;
