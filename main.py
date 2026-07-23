@@ -97,7 +97,12 @@ if __name__ == '__main__':
     )
     args_parser.add_argument('--s2t-relations', type=str, help='严格简繁 TSV；默认使用 data/s2t_strict.tsv')
     args_parser.add_argument('--audit-mc', action='store_true', help='输出中古音对应及疑似错行审计报告')
-    args_parser.add_argument('--phonology-table', action='store_true', help='在控制台额外输出声母、韵母条件熵归并表')
+    args_parser.add_argument('--phonology-table', action='store_true', help='导出声母、韵母中古音与现音对照 HTML')
+    args_parser.add_argument(
+        '--phonology-table-output',
+        type=str,
+        help='音系对照 HTML 路径；默认输出到 -o 目录',
+    )
     args_parser.add_argument('--mc-data', type=str, help='qieyun-auto KwangUon.csv 路径；也可设置 JYUTDICT_MC_DATA')
     args_parser.add_argument('--audit-limit', type=int, default=200, help='控制台最多显示多少条中古音审计候选')
     args_parser.add_argument('--sort-pron', default=False, action='store_true', help='輸出中字的讀音按字母序排序')
@@ -204,8 +209,26 @@ if __name__ == '__main__':
                 if args_config.audit_mc:
                     print(render_audit_console(audit_result), flush=True)
                 if args_config.phonology_table:
-                    from phonology_table import render_correspondence_tables
-                    print(render_correspondence_tables(audit_result.fitted.model), flush=True)
+                    from phonology_table import write_correspondence_html
+                    if args_config.phonology_table_output:
+                        phonology_table_path = Path(args_config.phonology_table_output)
+                    else:
+                        safe_locale_name = "".join(
+                            "_" if char in '<>:"/\\|?*' or ord(char) < 32 else char
+                            for char in locale_name
+                        ).strip(" .") or "方言"
+                        phonology_table_path = (
+                            Path(output_dir) / f"{safe_locale_name}_中古音與現音對照表.html"
+                        )
+                    written_path = write_correspondence_html(
+                        audit_result.fitted.model,
+                        phonology_table_path,
+                        locale_name=locale_name,
+                        source_name=os.path.basename(input_path),
+                        meanings=audit_result.dialect.meanings,
+                        pronunciations=audit_result.dialect.pronunciations,
+                    )
+                    logging.info("音系对照表已导出：%s", written_path)
 
             if opt_s2t_mode in safe_modes:
                 if audit_result is not None:

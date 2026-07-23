@@ -43,7 +43,7 @@ def apply_legacy_s2t(sheet: "Sheet", *, keep_collision: bool, convert_meanings: 
             continue
         if target in sheet.chara_index_dict:
             if keep_collision:
-                logging.debug("%s 簡轉繁保留 %s -> %s", entry.index, source, target)
+                logging.info("%s 簡轉繁保留 %s -> %s", entry.index, source, target)
             else:
                 logging.warning("%s 簡轉繁碰撞 %s -> %s", entry.index, source, target)
                 entry.status = -1

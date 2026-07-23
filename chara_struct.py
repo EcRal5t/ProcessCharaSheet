@@ -78,7 +78,7 @@ class Chara:
             for pron_, tone_ in split_jpps:
                 pron_jpp = pron_translate(rules=jpp_norm_rule, inp=pron_, to_jpp_or_ipa=None)
                 pron_jpp = norm_jpp(pron_jpp)
-                checked_tone_mark = "舒聲" if pron_[2] not in ["p", "t", "k", "ʔ"] else "入聲"
+                checked_tone_mark = "舒聲" if pron_[2] not in ["p", "t", "k", "ʔ", "h"] else "入聲"
                 tone_jpp = tone_translate(rules=mark_rule.get(checked_tone_mark, {}), tone_mark=tone_, skippable=True)
                 jpps.append(pron_jpp[0]+pron_jpp[1]+pron_jpp[2]+tone_jpp)
                 self._splited.append((pron_jpp, tone_jpp))
