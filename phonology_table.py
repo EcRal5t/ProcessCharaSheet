@@ -6,9 +6,9 @@ import hashlib
 import html
 import math
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Callable, Iterable, Mapping, Sequence
+from typing import Iterable, Mapping, Sequence
 
 from phonology import MC_INITIALS, MC_RHYMES, MCPosition, CorrespondenceModel, Pronunciation
 
@@ -19,8 +19,11 @@ class TableObservation:
     outcome: str
     display_outcome: str
     pronunciation: str
+    modern_initial: str
+    modern_final: str
     position: MCPosition
     weight: float
+    outcome_level: str = "category"
 
 
 @dataclass
@@ -42,6 +45,7 @@ class TableOutcome:
     char_count: int
     checked_char_count: int | None
     examples: tuple[TableExample, ...]
+    level: str = "category"
 
     @property
     def total_char_count(self) -> int:
@@ -69,6 +73,8 @@ FEATURE_LABELS = {
     "group": "組",
     "voicing": "清濁",
     "tone": "調",
+    "modern_initial": "現聲",
+    "modern_final": "現韻",
 }
 
 # Fixed description-length cost in bits.  Broad binary features are cheap;
@@ -83,6 +89,8 @@ FEATURE_COSTS = {
     "rhyme": 1.40,
     "initial": 0.60,
     "tone": 0.05,
+    "modern_initial": 0.60,
+    "modern_final": 1.20,
 }
 
 
@@ -97,7 +105,8 @@ def _normalise_checked_coda(final: str) -> str:
     return final
 
 
-def _feature(position: MCPosition, name: str) -> str:
+def _feature(observation: TableObservation, name: str) -> str:
+    position = observation.position
     values = {
         "openness": position.effective_openness,
         "she": position.she,
@@ -108,6 +117,8 @@ def _feature(position: MCPosition, name: str) -> str:
         "group": position.group,
         "voicing": position.voicing,
         "tone": position.tone,
+        "modern_initial": observation.modern_initial,
+        "modern_final": _normalise_checked_coda(observation.modern_final),
     }
     value = values[name] or "無"
     # In a binary 開/合 table, intrinsically neutral rhymes belong to the
@@ -173,6 +184,84 @@ def _all_outcomes(
     )
 
 
+def _merge_information_loss(
+    left: Sequence[TableObservation],
+    right: Sequence[TableObservation],
+) -> float:
+    """Jensen-Shannon information loss, in bits, from pooling two bases."""
+    left_weight = _weight(left)
+    right_weight = _weight(right)
+    total = left_weight + right_weight
+    if total <= 0:
+        return math.inf
+    return _entropy((*left, *right)) - (
+        left_weight / total * _entropy(left)
+        + right_weight / total * _entropy(right)
+    )
+
+
+def _base_family(
+    component: str,
+    observations: Sequence[TableObservation],
+) -> str:
+    if not observations:
+        return ""
+    if component == "initial":
+        return observations[0].position.group
+    if component == "final":
+        return observations[0].position.she
+    return ""
+
+
+def _group_base_observations(
+    grouped: Mapping[str, Sequence[TableObservation]],
+    base_order: Sequence[str],
+    component: str,
+    *,
+    maximum_information_loss_bits: float = 0.18,
+    maximum_group_size: int = 5,
+) -> list[tuple[tuple[str, ...], tuple[TableObservation, ...]]]:
+    """Agglomeratively merge bases whose reflex distributions carry little distinction."""
+    order_index = {base: index for index, base in enumerate(base_order)}
+    clusters = [
+        ((base,), tuple(grouped[base]))
+        for base in base_order
+        if grouped.get(base)
+    ]
+    while True:
+        best: tuple[float, int, int] | None = None
+        for left_index, (left_bases, left_rows) in enumerate(clusters):
+            for right_index in range(left_index + 1, len(clusters)):
+                right_bases, right_rows = clusters[right_index]
+                if len(left_bases) + len(right_bases) > maximum_group_size:
+                    continue
+                if _base_family(component, left_rows) != _base_family(component, right_rows):
+                    continue
+                if _modes(left_rows, limit=1) != _modes(right_rows, limit=1):
+                    continue
+                loss = _merge_information_loss(left_rows, right_rows)
+                candidate = (loss, left_index, right_index)
+                if best is None or candidate < best:
+                    best = candidate
+        if best is None or best[0] > maximum_information_loss_bits:
+            break
+        _loss, left_index, right_index = best
+        left_bases, left_rows = clusters[left_index]
+        right_bases, right_rows = clusters[right_index]
+        clusters[left_index] = (
+            (*left_bases, *right_bases),
+            (*left_rows, *right_rows),
+        )
+        del clusters[right_index]
+    return [
+        (
+            tuple(sorted(bases, key=order_index.__getitem__)),
+            rows,
+        )
+        for bases, rows in clusters
+    ]
+
+
 def _example_limit(char_count: int) -> int:
     """Scale examples gently from one to five as a rule covers more characters."""
     return min(5, max(1, math.ceil(math.sqrt(char_count))))
@@ -183,12 +272,19 @@ def _outcome_details(
     outcomes: Sequence[str],
     *,
     component: str,
+    outcome_levels: Mapping[str, str] | None = None,
 ) -> tuple[TableOutcome, ...]:
+    outcome_levels = {
+        observation.outcome: observation.outcome_level
+        for observation in observations
+        if observation.outcome_level != "category"
+    } | dict(outcome_levels or {})
     observations_by_outcome: defaultdict[str, list[TableObservation]] = defaultdict(list)
     for observation in observations:
         observations_by_outcome[observation.outcome].append(observation)
+    is_final_component = component in {"final", "reverse_final"}
     leaf_has_checked = (
-        component == "final"
+        is_final_component
         and any(
             observation.display_outcome.endswith(("p", "t", "k"))
             for observation in observations
@@ -201,14 +297,17 @@ def _outcome_details(
         checked_observations = [
             observation
             for observation in outcome_observations
-            if component == "final" and observation.display_outcome.endswith(("p", "t", "k"))
+            if is_final_component and observation.display_outcome.endswith(("p", "t", "k"))
         ]
         regular_observations = [
             observation
             for observation in outcome_observations
             if observation not in checked_observations
         ]
-        show_checked_count = leaf_has_checked and outcome.endswith(("m", "n", "ng"))
+        show_checked_count = leaf_has_checked and (
+            component == "reverse_final"
+            or outcome.endswith(("m", "n", "ng"))
+        )
         regular_chars = {observation.char for observation in regular_observations}
         checked_chars = {observation.char for observation in checked_observations}
 
@@ -254,6 +353,7 @@ def _outcome_details(
                 TableExample(char, tuple(sorted(pronunciations_by_char[char])))
                 for char in selected_chars
             ),
+            outcome_levels.get(outcome, "category"),
         ))
     return tuple(details)
 
@@ -265,7 +365,7 @@ def _partitions(
 ) -> dict[tuple[str, ...], tuple[TableObservation, ...]]:
     raw: defaultdict[str, list[TableObservation]] = defaultdict(list)
     for observation in observations:
-        raw[_feature(observation.position, feature)].append(observation)
+        raw[_feature(observation, feature)].append(observation)
     large = {
         (value,): tuple(rows)
         for value, rows in raw.items()
@@ -400,6 +500,56 @@ def _branch_label(values: tuple[str, ...]) -> str:
     return f"其餘{len(values)}類"
 
 
+def _coarsen_reverse_final_outcomes(
+    observations: Sequence[TableObservation],
+    *,
+    minimum_weight: float = 6.0,
+    minimum_normalised_entropy: float = 0.55,
+    maximum_dominant_rhyme_share: float = 0.80,
+) -> tuple[tuple[TableObservation, ...], dict[str, str]]:
+    """Use she when a reverse leaf cannot resolve its internal rhyme uncertainty."""
+    by_she: defaultdict[str, list[TableObservation]] = defaultdict(list)
+    for observation in observations:
+        by_she[observation.position.she].append(observation)
+
+    collapsed_she = set()
+    for she, rows in by_she.items():
+        if not she or _weight(rows) < minimum_weight:
+            continue
+        rhyme_counts: Counter[str] = Counter()
+        for observation in rows:
+            rhyme_counts[observation.position.rhyme] += observation.weight
+        if len(rhyme_counts) < 2:
+            continue
+        total = sum(rhyme_counts.values())
+        rhyme_entropy = -sum(
+            (count / total) * math.log2(count / total)
+            for count in rhyme_counts.values()
+            if count > 0
+        )
+        normalised_entropy = rhyme_entropy / math.log2(len(rhyme_counts))
+        dominant_share = max(rhyme_counts.values()) / total
+        if (
+            normalised_entropy >= minimum_normalised_entropy
+            and dominant_share <= maximum_dominant_rhyme_share
+        ):
+            collapsed_she.add(she)
+
+    if not collapsed_she:
+        return tuple(observations), {}
+    transformed = tuple(
+        replace(
+            observation,
+            outcome=observation.position.she,
+            outcome_level="she",
+        )
+        if observation.position.she in collapsed_she
+        else observation
+        for observation in observations
+    )
+    return transformed, {she: "she" for she in collapsed_she}
+
+
 def _rules_from_tree(
     base: str,
     node: EntropyNode,
@@ -415,15 +565,22 @@ def _rules_from_tree(
         # visible in HTML and are deemphasised there instead of disappearing.
         # For finals, checked codas already use their homorganic nasal outcome;
         # TableOutcome retains separate yang/checked counts.
-        outcomes = _all_outcomes(node.observations)
+        leaf_observations = node.observations
+        outcome_levels: dict[str, str] = {}
+        if component == "reverse_final":
+            leaf_observations, outcome_levels = _coarsen_reverse_final_outcomes(
+                leaf_observations
+            )
+        outcomes = _all_outcomes(leaf_observations)
         return [TableRule(
             base,
             conditions,
             outcomes,
             _outcome_details(
-                node.observations,
+                leaf_observations,
                 outcomes,
                 component=component,
+                outcome_levels=outcome_levels,
             ),
             entropy,
             max(base_entropy - entropy, 0.0),
@@ -453,40 +610,88 @@ def build_correspondence_rules(
     max_depth: int = 3,
 ) -> tuple[TableRule, ...]:
     if component == "initial":
-        base_function: Callable[[MCPosition], str] = lambda position: position.initial
+        model_component = "initial"
+        base_function = lambda observation: observation.pair.position.initial
         outcome_function = lambda observation: observation.pair.pronunciation.initial
+        display_function = outcome_function
         feature_order = ("tone", "openness", "she", "division", "chongniu", "rhyme")
         base_order = MC_INITIALS
     elif component == "final":
-        base_function = lambda position: position.rhyme
+        model_component = "final"
+        base_function = lambda observation: observation.pair.position.rhyme
         outcome_function = lambda observation: observation.pair.pronunciation.final
-        feature_order = ("tone", "group", "voicing", "initial", "openness", "division", "chongniu")
+        display_function = outcome_function
+        feature_order = (
+            "modern_initial", "tone", "group", "voicing", "initial",
+            "openness", "division", "chongniu",
+        )
         base_order = MC_RHYMES
+    elif component == "reverse_initial":
+        model_component = "initial"
+        base_function = lambda observation: observation.pair.pronunciation.initial or "∅"
+        outcome_function = lambda observation: observation.pair.position.initial
+        display_function = lambda observation: observation.pair.pronunciation.initial
+        feature_order = ("openness", "she", "division", "chongniu", "rhyme")
+        base_order = None
+        max_depth = min(max_depth, 2)
+    elif component == "reverse_final":
+        model_component = "final"
+        base_function = lambda observation: _normalise_checked_coda(
+            observation.pair.pronunciation.final
+        )
+        outcome_function = lambda observation: observation.pair.position.rhyme
+        display_function = lambda observation: observation.pair.pronunciation.final
+        feature_order = (
+            "modern_initial", "group", "voicing", "initial",
+            "openness", "division", "chongniu",
+        )
+        base_order = None
+        max_depth = min(max_depth, 2)
     else:
         raise ValueError(f"unsupported correspondence-table component: {component}")
 
     grouped: defaultdict[str, list[TableObservation]] = defaultdict(list)
-    for observation in model.component_observations[component]:
+    for observation in model.component_observations[model_component]:
         pair = observation.pair
-        display_outcome = outcome_function(observation)
+        pronunciation = pair.pronunciation
+        display_outcome = display_function(observation)
         outcome = (
             _normalise_checked_coda(display_outcome)
             if component == "final"
-            else display_outcome
+            else outcome_function(observation)
         )
-        grouped[base_function(pair.position)].append(TableObservation(
+        grouped[base_function(observation)].append(TableObservation(
             pair.char,
             outcome,
             display_outcome,
-            pair.pronunciation.raw,
+            pronunciation.raw,
+            pronunciation.initial,
+            pronunciation.final,
             pair.position,
             observation.weight,
         ))
+    if base_order is None:
+        base_weights = {
+            base: _weight(observations)
+            for base, observations in grouped.items()
+        }
+        base_order = tuple(sorted(
+            grouped,
+            key=lambda base: (-base_weights[base], base),
+        ))
+    if component == "reverse_final":
+        for base, observations in tuple(grouped.items()):
+            grouped[base], _outcome_levels = _coarsen_reverse_final_outcomes(
+                observations
+            )
     rules = []
-    for base in base_order:
-        observations = grouped.get(base)
-        if not observations:
-            continue
+    base_groups = _group_base_observations(
+        grouped,
+        tuple(base_order),
+        component,
+    )
+    for bases, observations in base_groups:
+        base = "/".join(bases)
         tree = _build_tree(
             observations,
             feature_order,
@@ -636,6 +841,8 @@ def _render_html_rows(
         rule = row.rule
         detail = row.detail
         modern = detail.value or "∅"
+        level_class = " level-she" if detail.level == "she" else ""
+        level_badge = '<span class="level-badge">攝</span>' if detail.level == "she" else ""
         accent, background, foreground = _colour_for(detail.value)
         examples = "".join(
             _example_html(example, meanings, pronunciations)
@@ -649,6 +856,7 @@ def _render_html_rows(
         search_text = " ".join((
             rule.base,
             modern,
+            "攝" if detail.level == "she" else "",
             *(f"{name}{value}" for name, value in rule.conditions),
             *(example.char for example in detail.examples),
             *(
@@ -683,11 +891,12 @@ def _render_html_rows(
             )
         rare_class = " low-frequency" if row.share < 0.4 else ""
         cells.extend((
-            f'<td class="modern-cell outcome-cell{rare_class}" '
+            f'<td class="modern-cell outcome-cell{level_class}{rare_class}" '
             f'style="--accent:{accent};--tone-bg:{background};--tone-fg:{foreground};'
-            f'--prominence:{row.prominence:.3f}" title="同一地位內佔比 {row.share:.1%}">'
+            f'--prominence:{row.prominence:.3f}" title="同一條件內佔比 {row.share:.1%}；'
+            f'條件熵 {rule.entropy_bits:.2f} bits；降熵 {rule.information_gain_bits:.2f} bits">'
             '<span class="outcome-fade"><span class="tone-dot"></span>'
-            f"<strong>{html.escape(modern)}</strong></span></td>",
+            f"{level_badge}<strong>{html.escape(modern)}</strong></span></td>",
             f'<td class="count-cell outcome-cell{rare_class}" style="--prominence:{row.prominence:.3f}">'
             f'<span class="outcome-fade">{count}</span></td>',
             f'<td class="examples-cell outcome-cell{rare_class}" style="--prominence:{row.prominence:.3f}">'
@@ -708,6 +917,7 @@ def _render_section(
     title: str,
     subtitle: str,
     base_label: str,
+    outcome_label: str,
     rules: Sequence[TableRule],
     meanings: Mapping[tuple[str, str], Sequence[str]],
     pronunciations: Mapping[str, set[Pronunciation]],
@@ -722,11 +932,13 @@ def _render_section(
         f"<th>條件 {index + 1}</th>"
         for index in range(condition_depth)
     )
+    hidden = "" if section_id == "initials" else " hidden"
     return f"""
-    <section class="table-card" id="{section_id}">
+    <section class="table-card" id="{section_id}" role="tabpanel"
+             aria-labelledby="tab-{section_id}"{hidden}>
       <div class="section-heading">
         <div>
-          <p class="eyebrow">{base_count} 個中古類 · {row_count} 條對應</p>
+          <p class="eyebrow">{base_count} 類 · {row_count} 條對應</p>
           <h2>{html.escape(title)}</h2>
           <p>{html.escape(subtitle)}</p>
         </div>
@@ -742,7 +954,7 @@ def _render_section(
             <tr>
               <th rowspan="2">{html.escape(base_label)}</th>
               <th colspan="{condition_depth}">附加地位</th>
-              <th rowspan="2">現代音</th>
+              <th rowspan="2">{html.escape(outcome_label)}</th>
               <th rowspan="2">轄字</th>
               <th rowspan="2">例字</th>
             </tr>
@@ -778,25 +990,49 @@ def render_correspondence_html(
     pronunciations = pronunciations or {}
     initial_rules = build_correspondence_rules(model, "initial")
     final_rules = build_correspondence_rules(model, "final")
+    reverse_initial_rules = build_correspondence_rules(model, "reverse_initial")
+    reverse_final_rules = build_correspondence_rules(model, "reverse_final")
     source_line = (
         f'<span>來源：{html.escape(source_name)}</span>'
         if source_name else ""
     )
     initial_section = _render_section(
         section_id="initials",
-        title="聲母對照",
+        title="正向 · 聲母對照",
         subtitle="以中古聲母為主幹，按有足夠解釋力的韻攝、等、開合、重紐或聲調條件展開。",
         base_label="中古聲母",
+        outcome_label="現代聲母",
         rules=initial_rules,
         meanings=meanings,
         pronunciations=pronunciations,
     )
     final_section = _render_section(
         section_id="finals",
-        title="韻母對照",
-        subtitle="以中古韻為主幹；入聲韻尾按同部位改寫為陽聲韻尾，轄字欄以「陽聲＋入聲」分開計數。",
+        title="正向 · 韻母對照",
+        subtitle="以中古韻為主幹，現代聲母亦可在有足夠資訊增益時成為附加條件；入聲韻尾改寫為同部位陽聲韻尾並分開計數。",
         base_label="中古韻",
+        outcome_label="現代韻母",
         rules=final_rules,
+        meanings=meanings,
+        pronunciations=pronunciations,
+    )
+    reverse_initial_section = _render_section(
+        section_id="reverse-initials",
+        title="反查 · 現代聲母",
+        subtitle="以現代聲母反查中古聲母；附加條件取自中古開合、攝、等、重紐與韻，不使用中古聲母或任何聲調。",
+        base_label="現代聲母",
+        outcome_label="中古聲母",
+        rules=reverse_initial_rules,
+        meanings=meanings,
+        pronunciations=pronunciations,
+    )
+    reverse_final_section = _render_section(
+        section_id="reverse-finals",
+        title="反查 · 現代韻母",
+        subtitle="以現代韻母反查中古韻或攝；附加條件使用其餘中古地位並保留現代聲母，不以中古韻本身作條件。",
+        base_label="現代韻母",
+        outcome_label="中古韻",
+        rules=reverse_final_rules,
         meanings=meanings,
         pronunciations=pronunciations,
     )
@@ -839,13 +1075,21 @@ def render_correspondence_html(
     .lead {{ max-width: 760px; margin: 18px 0 0; color: var(--muted); font-size: 1.02rem; }}
     .meta {{ display: flex; flex-wrap: wrap; gap: 10px 20px; margin-top: 22px; color: var(--muted); font-size: .88rem; }}
     .meta strong {{ color: var(--ink); }}
-    .jump-links {{ display: flex; gap: 10px; margin-top: 26px; }}
-    .jump-links a {{
+    [hidden] {{ display: none !important; }}
+    .jump-links {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 26px; }}
+    .jump-links button {{
       border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px;
       background: rgba(255,255,255,.72); color: var(--ink); text-decoration: none;
-      font-size: .9rem; font-weight: 700;
+      font: inherit; font-size: .9rem; font-weight: 700; cursor: pointer;
     }}
-    .jump-links a:hover {{ border-color: var(--brand); color: var(--brand); }}
+    .jump-links button:hover {{ border-color: var(--brand); color: var(--brand); }}
+    .jump-links button[aria-selected="true"] {{
+      border-color: var(--brand); background: var(--brand); color: #fff;
+      box-shadow: 0 4px 14px rgba(11, 102, 85, .18);
+    }}
+    .jump-links button:focus-visible {{
+      outline: 3px solid var(--brand-pale); outline-offset: 2px;
+    }}
     main {{ display: grid; gap: 28px; padding-bottom: 64px; }}
     .table-card {{
       overflow: hidden; border: 1px solid var(--line); border-radius: 18px;
@@ -902,11 +1146,22 @@ def render_correspondence_html(
       display: inline-block; width: 6px; height: 6px; margin-right: 6px;
       border-radius: 50%; background: var(--accent); vertical-align: 1px;
     }}
+    .level-she {{
+      background-image: repeating-linear-gradient(
+        -45deg, transparent 0, transparent 7px,
+        rgba(255, 255, 255, .48) 7px, rgba(255, 255, 255, .48) 10px
+      );
+    }}
+    .level-badge {{
+      display: inline-block; margin-right: 5px; border: 1px solid currentColor;
+      border-radius: 4px; padding: 0 3px; font-size: .58rem; font-weight: 800;
+      line-height: 1.35; vertical-align: 1px;
+    }}
     .count-cell {{ width: 4.5rem; color: var(--muted); font-variant-numeric: tabular-nums; }}
     .examples-cell {{ min-width: 9rem; }}
     .example {{
       display: inline-flex; align-items: baseline; min-height: 1.5rem; margin: 1px 3px 1px 0;
-      border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; background: #fff;
+      padding: 1px 2px; background: transparent;
     }}
     .example-char {{
       font-size: .96rem;
@@ -942,28 +1197,68 @@ def render_correspondence_html(
     <div class="page">
       <p class="kicker">Phonological correspondence</p>
       <h1>{html.escape(locale_name)}<br>中古音與現音對照表</h1>
-      <p class="lead">同一中古條件若對應多個現代音，已逐音拆行。入聲韻按同部位改寫為陽聲韻，轄字仍分開計數；低於同地位 40% 的少見音會逐步淡化。</p>
+      <p class="lead">正向表由中古地位推導現代音；反查表由現代聲母或韻母尋找中古來源。附加條件均由條件熵與資訊增益決定，少見對應保留但會逐步淡化。</p>
       <div class="meta">
         <span>方言點：<strong>{html.escape(locale_name)}</strong></span>
         {source_line}
       </div>
-      <nav class="jump-links" aria-label="表格導覽">
-        <a href="#initials">聲母對照</a>
-        <a href="#finals">韻母對照</a>
+      <nav class="jump-links" role="tablist" aria-label="選擇對照表">
+        <button id="tab-initials" type="button" role="tab" aria-controls="initials"
+                aria-selected="true">正向聲母</button>
+        <button id="tab-finals" type="button" role="tab" aria-controls="finals"
+                aria-selected="false" tabindex="-1">正向韻母</button>
+        <button id="tab-reverse-initials" type="button" role="tab" aria-controls="reverse-initials"
+                aria-selected="false" tabindex="-1">反查聲母</button>
+        <button id="tab-reverse-finals" type="button" role="tab" aria-controls="reverse-finals"
+                aria-selected="false" tabindex="-1">反查韻母</button>
       </nav>
     </div>
   </header>
   <main class="page">
     {initial_section}
     {final_section}
+    {reverse_initial_section}
+    {reverse_final_section}
   </main>
   <footer class="page">
     <details class="method">
       <summary>讀表與取例說明</summary>
-      <p>附加地位只保留能帶來足夠降熵、且足以抵償分支複雜度的條件。韻母轄字若寫成「12+11」，分別表示陽聲字與入聲字。例字按規則內權重排序，每行一至五字；反斜線花括號內是原表備註。若一字的多個音只差聲調，備註省略。</p>
+      <p>每個主幹先計算輸出類別的香農熵，再以候選音韻特徵計算條件熵；只有資訊增益足夠、且抵償分支描述成本的特徵才會展開。反查表會重新擬合決策樹，並非正向表的機械轉置。韻母轄字若寫成「12+11」，分別表示陽聲字與入聲字。例字按規則內權重排序，每行一至五字；括號內是原表備註。若一字的多個音只差聲調，備註省略。</p>
     </details>
   </footer>
   <script>
+    const tabButtons = Array.from(document.querySelectorAll('[role="tab"]'));
+    const tabPanels = Array.from(document.querySelectorAll('[role="tabpanel"]'));
+    const panelIds = new Set(tabPanels.map(panel => panel.id));
+
+    function activatePanel(panelId, updateHash = true) {{
+      if (!panelIds.has(panelId)) panelId = "initials";
+      tabPanels.forEach(panel => {{
+        panel.hidden = panel.id !== panelId;
+      }});
+      tabButtons.forEach(button => {{
+        const selected = button.getAttribute("aria-controls") === panelId;
+        button.setAttribute("aria-selected", String(selected));
+        button.tabIndex = selected ? 0 : -1;
+      }});
+      if (updateHash) history.replaceState(null, "", `#${{panelId}}`);
+    }}
+
+    tabButtons.forEach((button, index) => {{
+      button.addEventListener("click", () => {{
+        activatePanel(button.getAttribute("aria-controls"));
+      }});
+      button.addEventListener("keydown", event => {{
+        if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+        event.preventDefault();
+        const offset = event.key === "ArrowRight" ? 1 : -1;
+        const target = tabButtons[(index + offset + tabButtons.length) % tabButtons.length];
+        activatePanel(target.getAttribute("aria-controls"));
+        target.focus();
+      }});
+    }});
+    activatePanel(location.hash.slice(1), false);
+
     document.querySelectorAll("[data-table-filter]").forEach(input => {{
       const table = document.getElementById(input.dataset.tableFilter);
       const empty = table.parentElement.querySelector(".empty-state");
